@@ -52,30 +52,30 @@
     inputs.self.packages.${pkgs.system}.brightness
   ];
 
-  # ── Gamescope + Steam ───────────────────────────────
-  programs.gamescope = {
+  # ── KDE Plasma Desktop ─────────────────────────────
+  # SDDM auto-logs into KDE, which is the Wayland compositor
+  # (replacing gamescope). All system controls built-in.
+  services.desktopManager.plasma6.enable = true;
+  services.displayManager.sddm = {
     enable = true;
-    capSysNice = true;
+    wayland.enable = true;
+    autoLogin = {
+      enable = true;
+      user = "sawyer";
+    };
   };
 
-  programs.steam = {
-    enable = true;
-    gamescopeSession.enable = true;
-  };
-
+  # ── Steam + Gaming ─────────────────────────────────
+  programs.steam.enable = true;
   programs.gamemode.enable = true;
-
-  # ── Auto-login → Steam Big Picture ──────────────────
-  # greetd replaces the display manager. On boot, it auto-logs
-  # in as "sawyer" and launches gamescope with Steam Big Picture.
-  # If Steam crashes, greetd restarts the session automatically.
-  services.greetd = {
-    enable = true;
-    settings = {
-      default_session = {
-        user = "sawyer";
-        command = "${lib.getExe pkgs.gamescope} --steam --prefer-vk-device 1002:7550 --adaptive-sync --hdr-enabled --hdr-itm-enabled -- steam -gamepadui -pipewire-dmabuf";
-      };
+  systemd.user.services.steam-big-picture = {
+    description = "Steam Big Picture Mode";
+    wantedBy = [ "graphical-session.target" ];
+    partOf = [ "graphical-session.target" ];
+    serviceConfig = {
+      ExecStart = "steam -gamepadui";
+      Restart = "on-failure";
+      RestartSec = 5;
     };
   };
 
@@ -126,9 +126,6 @@
     dates = "weekly";
     options = "--delete-older-than 7d";
   };
-
-  # ── Decky Loader ───────────────────────────────────
-  services.decky-loader.enable = true;
 
   system.stateVersion = "25.11";
 }
