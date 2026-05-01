@@ -31,7 +31,10 @@
         set -e
         case "''${1:-show}" in
           show)  ddcutil getvcp 10 ;;
-          up)    ddcutil setvcp 10 +10 ;;
+          up)  cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
+                 new=$((cur + 10))
+                 [ "$new" -lt 0 ] && new=0
+                 ddcutil setvcp 10 "$new" ;;
           down)  cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
                  new=$((cur - 10))
                  [ "$new" -lt 0 ] && new=0
