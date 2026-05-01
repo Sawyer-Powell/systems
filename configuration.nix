@@ -44,6 +44,8 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    firefox
+    ghostty
     neovim
     git
     nodejs_22
@@ -59,10 +61,10 @@
   services.displayManager.sddm = {
     enable = true;
     wayland.enable = true;
-    autoLogin = {
-      enable = true;
-      user = "sawyer";
-    };
+  };
+  services.displayManager.autoLogin = {
+    enable = true;
+    user = "sawyer";
   };
 
   # ── Steam + Gaming ─────────────────────────────────
