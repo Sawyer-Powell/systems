@@ -11,21 +11,36 @@
   };
 
   # ── Outputs: what does this flake produce? ──────────
-  # The function receives `inputs` and `system` from the caller.
-  # `nixpkgs.lib.nixosSystem` builds a bootable NixOS closure.
-  outputs = { self, nixpkgs, ... }@inputs: {
+  outputs = { self, nixpkgs, ... }@inputs:
+  let
+    # Helper: make pkgs for each system our flake supports.
+    # eachSystem calls our function once per system (x86_64-linux, aarch64-linux...)
+    eachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
+  in
+  {
+    # ── Packages ────────────────────────────────────
+    # These are things we can build with `nix build .#<name>`
+    packages = eachSystem (system:
+      let pkgs = import nixpkgs { inherit system; };
+      in {
+        # A script is a package too. writeShellScriptBin produces
+        # a derivation that puts the script in /bin/<name>.
+        brightness = pkgs.writeShellScriptBin "brightness" ''
+          # TODO: we'll add ddcutil later and make this real
+          echo "brightness control coming soon"
+        '';
+      });
+
+    # ── NixOS configurations ────────────────────────
     nixosConfigurations.couchtop = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
 
-      # modules = the list of config files to merge together.
-      # NixOS merges them all into one final system definition.
       modules = [
         ./configuration.nix
         ./hardware-configuration.nix
 
-        # Sneak brick through the window: expose the flake's
-        # inputs to our modules. Configuration can then reference
-        # things like `inputs.nixpkgs` — useful later for decky.
+        # Make our packages available in configuration.nix
+        # as `inputs.self.packages`.
         {
           _module.args.inputs = inputs;
         }
