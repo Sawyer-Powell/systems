@@ -10,6 +10,7 @@
   # RDNA 4 (9070 XT) needs bleeding-edge kernel + early KMS
   boot.kernelPackages = pkgs.linuxPackages_latest;
   boot.initrd.kernelModules = [ "amdgpu" ];
+  boot.kernelModules = [ "i2c-dev" ];  # DDC/CI for monitor control
 
   # Quiet boot — straight into Steam, no text wall
   boot.kernelParams = [ "quiet" "splash" ];
@@ -47,6 +48,7 @@
     git
     nodejs_22
     pnpm_9
+    ddcutil          # monitor brightness via DDC/CI
   ];
 
   # ── Gamescope + Steam ───────────────────────────────
@@ -87,6 +89,7 @@
       "video"
       "input"
       "gamemode"
+      "i2c"             # DDC/CI monitor control
     ];
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaDe/QoajHR6CMl2DdVPtHyXCs5LuL3w8RBwi4xPquV sawyer@Sawyers-MacBook-Pro.local"

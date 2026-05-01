@@ -26,8 +26,14 @@
         # A script is a package too. writeShellScriptBin produces
         # a derivation that puts the script in /bin/<name>.
         brightness = pkgs.writeShellScriptBin "brightness" ''
-          # TODO: we'll add ddcutil later and make this real
-          echo "brightness control coming soon"
+          set -e
+          # VCP code 0x10 = brightness. ddcutil talks DDC/CI to the monitor.
+          case "''${1:-show}" in
+            show)  ddcutil getvcp 10 ;;
+            up)    ddcutil setvcp 10 +10 ;;
+            down)  ddcutil setvcp 10 -10 ;;
+            *)     ddcutil setvcp 10 "$1" ;;
+          esac
         '';
       });
 
