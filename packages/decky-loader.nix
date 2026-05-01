@@ -10,6 +10,7 @@
   python3,
   coreutils,
   psmisc,
+  systemd,
 }:
 python3.pkgs.buildPythonPackage rec {
   pname = "decky-loader";
@@ -64,7 +65,7 @@ python3.pkgs.buildPythonPackage rec {
   ];
 
   makeWrapperArgs = [
-    "--prefix PATH : ${lib.makeBinPath [ coreutils psmisc ]}"
+    "--prefix PATH : ${lib.makeBinPath [ coreutils psmisc python3 systemd ]}"
   ];
 
   pythonRelaxDeps = [
