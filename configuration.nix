@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
 {
   imports = [ ./hardware-configuration.nix ];
@@ -49,6 +49,7 @@
     nodejs_22
     pnpm_9
     ddcutil          # monitor brightness via DDC/CI
+    inputs.self.packages.${pkgs.system}.brightness
   ];
 
   # ── Gamescope + Steam ───────────────────────────────
