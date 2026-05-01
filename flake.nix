@@ -2,56 +2,55 @@
   description = "couchtop — gaming console NixOS";
 
   # ── Inputs: where do my dependencies come from? ─────
-  # Each input is fetched, its exact commit locked in flake.lock.
-  # "github:owner/repo/branch" means "follow this branch"
-  # But flake.lock pins the *exact commit* — so it's reproducible.
   inputs = {
-    # nixpkgs — the giant package repository (80,000+ packages)
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   # ── Outputs: what does this flake produce? ──────────
   outputs = { self, nixpkgs, ... }@inputs:
   let
-    # Helper: make pkgs for each system our flake supports.
-    # eachSystem calls our function once per system (x86_64-linux, aarch64-linux...)
-    eachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
   in
   {
-    # ── Packages ────────────────────────────────────
-    # These are things we can build with `nix build .#<name>`
-    packages = eachSystem (system:
-      let pkgs = import nixpkgs { inherit system; };
-      in {
-        # A script is a package too. writeShellScriptBin produces
-        # a derivation that puts the script in /bin/<name>.
-        brightness = pkgs.writeShellScriptBin "brightness" ''
-          set -e
-          # VCP code 0x10 = brightness. ddcutil talks DDC/CI to the monitor.
-          case "''${1:-show}" in
-            show)  ddcutil getvcp 10 ;;
-            up)    ddcutil setvcp 10 +10 ;;
-            down)  cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
-                   new=$((cur - 10))
-                   [ "$new" -lt 0 ] && new=0
-                   ddcutil setvcp 10 "$new" ;;
-            *)     ddcutil setvcp 10 "$1" ;;
-          esac
-        '';
-      });
+    # ── Overlays: extend nixpkgs with our packages ────
+    # An overlay is a function (final: prev: { ... }) that
+    # adds or overrides packages. `callPackage` auto-fills
+    # function arguments from nixpkgs.
+    overlays.default = final: prev: {
+      decky-loader = final.callPackage ./packages/decky-loader.nix { };
+    };
 
-    # ── NixOS configurations ────────────────────────
+    # ── NixOS modules: reusable config pieces ─────────
+    # Importing this gives you `services.decky-loader.enable`.
+    nixosModules.default = ./modules/decky-loader.nix;
+
+    # ── Standalone packages (nix build / nix run) ─────
+    packages.${system} = {
+      brightness = pkgs.writeShellScriptBin "brightness" ''
+        set -e
+        case "''${1:-show}" in
+          show)  ddcutil getvcp 10 ;;
+          up)    ddcutil setvcp 10 +10 ;;
+          down)  cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
+                 new=$((cur - 10))
+                 [ "$new" -lt 0 ] && new=0
+                 ddcutil setvcp 10 "$new" ;;
+          *)     ddcutil setvcp 10 "$1" ;;
+        esac
+      '';
+    };
+
+    # ── NixOS system configuration ────────────────────
     nixosConfigurations.couchtop = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-
+      inherit system;
       modules = [
         ./configuration.nix
         ./hardware-configuration.nix
-
-        # Make our packages available in configuration.nix
-        # as `inputs.self.packages`.
+        self.nixosModules.default    # → services.decky-loader.*
         {
           _module.args.inputs = inputs;
+          nixpkgs.overlays = [ self.overlays.default ];  # → pkgs.decky-loader
         }
       ];
     };

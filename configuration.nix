@@ -127,5 +127,8 @@
     options = "--delete-older-than 7d";
   };
 
+  # ── Decky Loader ───────────────────────────────────
+  services.decky-loader.enable = true;
+
   system.stateVersion = "25.11";
 }
