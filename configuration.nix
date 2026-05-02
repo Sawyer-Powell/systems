@@ -21,7 +21,6 @@
   networking.networkmanager.enable = true;
 
   # ── Locale ──────────────────────────────────────────
-  # TODO: adjust timezone for your location
   time.timeZone = "America/Los_Angeles";
 
   # ── Graphics ────────────────────────────────────────
@@ -45,6 +44,7 @@
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
     fd
+    bitwarden-cli
     ripgrep
     python314
     cargo
@@ -103,7 +103,7 @@
       "video"
       "input"
       "gamemode"
-      "i2c"             # DDC/CI monitor control
+      "i2c"
     ];
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaDe/QoajHR6CMl2DdVPtHyXCs5LuL3w8RBwi4xPquV sawyer@Sawyers-MacBook-Pro.local"
