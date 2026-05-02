@@ -3,13 +3,17 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     pi-agent = {
       url = "path:./pi-agent";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, pi-agent, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, pi-agent, ... }@inputs:
   let
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
@@ -38,6 +42,13 @@
         ./configuration.nix
         ./hardware-configuration.nix
         { _module.args.inputs = inputs; }
+
+        home-manager.nixosModules.home-manager
+        {
+          home-manager.useGlobalPkgs = true;
+          home-manager.useUserPackages = true;
+          home-manager.users.sawyer = import ./home.nix;
+        }
       ];
     };
   };

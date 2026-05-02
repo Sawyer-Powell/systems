@@ -43,24 +43,14 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
-    gh
     jq
-    fd
-    bitwarden-cli
     ripgrep
     python314
     cargo
     rustc
     rustfmt
     clippy
-    jjui
-    jujutsu
-    uv
     (pkgs.mpv.override { youtubeSupport = false; })
-    firefox
-    ghostty
-    neovim
-    git
     nodejs_22
     pnpm_9
     ddcutil          # monitor brightness via DDC/CI
