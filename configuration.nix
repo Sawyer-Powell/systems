@@ -43,6 +43,7 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    jq
     fd
     bitwarden-cli
     ripgrep
