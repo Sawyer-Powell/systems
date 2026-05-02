@@ -36,27 +36,10 @@
         "type": "github"
       }
     },
-    "pi-agent": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "path": "./pi-agent",
-        "type": "path"
-      },
-      "original": {
-        "path": "./pi-agent",
-        "type": "path"
-      },
-      "parent": []
-    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs",
-        "pi-agent": "pi-agent"
+        "nixpkgs": "nixpkgs"
       }
     }
   },

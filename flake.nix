@@ -7,13 +7,9 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    pi-agent = {
-      url = "path:./pi-agent";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, home-manager, pi-agent, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, ... }@inputs:
   let
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
@@ -33,6 +29,7 @@
           *)     ddcutil setvcp 10 "$1" ;;
         esac
       '';
+      pi = import ./pi.nix { inherit pkgs; };
     };
 
     # ── NixOS system configuration ──────────────────
