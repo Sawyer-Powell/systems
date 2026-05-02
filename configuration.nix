@@ -44,6 +44,7 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    mpv
     firefox
     ghostty
     neovim
