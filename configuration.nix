@@ -44,7 +44,14 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
-    mpv
+    cargo
+    rustc
+    rustfmt
+    clippy
+    jjui
+    jujutsu
+    uv
+    (pkgs.mpv.override { youtubeSupport = false; })
     firefox
     ghostty
     neovim
