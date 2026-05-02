@@ -44,6 +44,7 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    python314
     cargo
     rustc
     rustfmt
