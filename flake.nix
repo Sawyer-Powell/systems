@@ -3,7 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    pi-agent.url = "path:./pi-agent";
+    pi-agent = {
+      url = "path:./pi-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, pi-agent, ... }@inputs:
