@@ -44,6 +44,8 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    fd
+    ripgrep
     python314
     cargo
     rustc
