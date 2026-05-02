@@ -64,6 +64,7 @@
     pnpm_9
     ddcutil          # monitor brightness via DDC/CI
     inputs.self.packages.${pkgs.system}.brightness
+    inputs.pi-agent.packages.${pkgs.system}.default
   ];
 
   # ── KDE Plasma Desktop ─────────────────────────────
