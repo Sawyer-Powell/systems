@@ -43,6 +43,7 @@
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
+    gh
     jq
     fd
     bitwarden-cli
