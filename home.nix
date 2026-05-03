@@ -52,6 +52,7 @@
     initExtra = ''
       alias vim=nvim
       alias vi=nvim
+      alias switch="sudo nixos-rebuild switch --flake ."
     '';
   };
 
