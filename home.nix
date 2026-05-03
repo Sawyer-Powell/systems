@@ -6,8 +6,8 @@
 
   # ── Packages just for your user ─────────────────────
   home.packages = with pkgs; [
-    # CLI tools you reach for daily
     ripgrep
+    qbittorrent
     fd
     mullvad
     jq
