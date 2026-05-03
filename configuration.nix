@@ -106,6 +106,13 @@
     ];
   };
 
+  # ── GPG ────────────────────────────────────────────
+  programs.gnupg.agent = {
+    enable = true;
+    pinentryPackage = pkgs.pinentry-qt;  # works with KDE/Plasma
+    enableSSHSupport = true;             # lets GPG act as SSH agent
+  };
+
   # ── SSH for remote management ───────────────────────
   services.openssh = {
     enable = true;

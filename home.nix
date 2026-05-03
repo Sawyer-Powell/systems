@@ -31,6 +31,10 @@
       user.name = "Sawyer Powell";
       user.email = "sawyerhpowell@gmail.com";
 
+      user.signingkey = "3A3CA3284DF8431A";
+      commit.gpgsign = true;
+      tag.gpgsign = true;
+
       init.defaultBranch = "main";
       pull.rebase = true;
       push.autoSetupRemote = true;
