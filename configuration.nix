@@ -20,6 +20,9 @@
   networking.hostName = "couchtop";
   networking.networkmanager.enable = true;
 
+  # Mullvad VPN daemon
+  services.mullvad-vpn.enable = true;
+
   # ── Locale ──────────────────────────────────────────
   time.timeZone = "America/Los_Angeles";
 

@@ -9,6 +9,7 @@
     # CLI tools you reach for daily
     ripgrep
     fd
+    mullvad
     jq
     gh
     git
