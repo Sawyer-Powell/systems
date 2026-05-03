@@ -12,7 +12,7 @@
   outputs = { self, nixpkgs, home-manager, ... }@inputs:
   let
     system = "x86_64-linux";
-    pkgs = import nixpkgs { inherit system; };
+    pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
   in
   {
     # ── Packages ────────────────────────────────────
@@ -30,6 +30,15 @@
         esac
       '';
       pi = import ./pi.nix { inherit pkgs; };
+      eden = import ./eden-emulator.nix { inherit pkgs; };
+    };
+
+    # ── Apps (runnable via `nix run .#eden`) ─────────
+    apps.${system} = {
+      eden = {
+        type = "app";
+        program = "${self.packages.${system}.eden}/bin/eden";
+      };
     };
 
     # ── NixOS system configuration ──────────────────

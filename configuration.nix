@@ -75,6 +75,7 @@
     ddcutil          # monitor brightness via DDC/CI
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.brightness
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.pi
+    inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.eden
   ];
 
   # ── KDE Plasma Desktop ─────────────────────────────
