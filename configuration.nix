@@ -92,7 +92,10 @@
   };
 
   # ── Steam + Gaming ─────────────────────────────────
-  programs.steam.enable = true;
+  programs.steam = {
+    enable = true;
+    remotePlay.openFirewall = true;
+  };
   programs.gamemode.enable = true;
   systemd.user.services.steam-big-picture = {
     description = "Steam Big Picture Mode";
@@ -114,6 +117,7 @@
       "networkmanager"
       "audio"
       "video"
+      "render"
       "input"
       "gamemode"
       "i2c"

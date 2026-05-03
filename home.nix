@@ -7,6 +7,7 @@
   # ── Packages just for your user ─────────────────────
   home.packages = with pkgs; [
     ripgrep
+    claude-code
     qbittorrent
     fd
     mullvad
