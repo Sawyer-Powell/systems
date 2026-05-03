@@ -30,7 +30,14 @@
   hardware.graphics = {
     enable = true;
     enable32Bit = true;   # Steam needs 32-bit GL
+    extraPackages = with pkgs; [
+      libva-vdpau-driver
+      libvdpau-va-gl
+    ];
   };
+
+  # Jellyfin hardware transcoding — jellyfin user needs render + video
+  users.users.jellyfin.extraGroups = [ "media" "render" "video" ];
 
   # ── Audio ───────────────────────────────────────────
   services.pipewire = {
@@ -40,6 +47,15 @@
     alsa.enable = true;
     jack.enable = true;
   };
+
+  # ── Media server (Jellyfin) ─────────────────────────
+  services.jellyfin = {
+    enable = true;
+    openFirewall = true;           # opens port 8096
+    group = "media";
+  };
+
+  users.groups.media = {};
 
   # ── Nixpkgs ────────────────────────────────────────
   nixpkgs.config.allowUnfree = true;
@@ -100,6 +116,7 @@
       "input"
       "gamemode"
       "i2c"
+      "media"
     ];
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaDe/QoajHR6CMl2DdVPtHyXCs5LuL3w8RBwi4xPquV sawyer@Sawyers-MacBook-Pro.local"
