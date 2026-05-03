@@ -2,12 +2,12 @@
 
 pkgs.buildNpmPackage {
   pname = "pi";
-  version = "0.72.0";
+  version = "0.72.1";
 
   src = pkgs.fetchFromGitHub {
     owner = "badlogic";
     repo = "pi-mono";
-    rev = "v0.72.0";
+    rev = "v0.72.1";
     hash = "sha256-ifA9shJqb7eZVmjXK/TSQfLAT0lvc2fL2d9V7X96heY=";
   };
 
