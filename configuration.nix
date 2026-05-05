@@ -16,6 +16,18 @@
   boot.kernelParams = [ "quiet" "splash" ];
   boot.plymouth.enable = true;
 
+  # amd-pstate-epp is already active by default on kernel 6.5+ for Zen 5;
+  # setting governor to performance changes the EPP hint to the SMU for
+  # faster boost response.
+  powerManagement.cpuFreqGovernor = "performance";
+
+  # Reduce swap aggressiveness for a 32GB gaming desktop; disable proactive
+  # memory compaction to eliminate background latency spikes.
+  boot.kernel.sysctl = {
+    "vm.swappiness" = 10;
+    "vm.compaction_proactiveness" = 0;
+  };
+
   # ── Networking ──────────────────────────────────────
   networking.hostName = "couchtop";
   networking.networkmanager.enable = true;
@@ -107,6 +119,12 @@
     enable = true;
     remotePlay.openFirewall = true;
   };
+
+  environment.sessionVariables = {
+    SDL_JOYSTICK_HIDAPI = "1";
+    SDL_JOYSTICK_HIDAPI_8BITDO = "1";
+  };
+
   programs.gamemode.enable = true;
 
   # ── User ────────────────────────────────────────────
@@ -149,10 +167,12 @@
   users.groups.i2c = {};
   services.udev.extraRules = ''
     KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
+    KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2dc8", ATTRS{idProduct}=="6012", MODE="0660", TAG+="uaccess", TAG+="udev-acl"
   '';
 
   # ── Gamepad / Bluetooth ─────────────────────────────
   hardware.xone.enable = true;       # Xbox wireless dongle
+  hardware.steam-hardware.enable = true;  # udev rules + uinput for Steam Input
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;

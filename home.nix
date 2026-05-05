@@ -6,6 +6,9 @@
 
   # ── Packages just for your user ─────────────────────
   home.packages = with pkgs; [
+    gimp
+    zellij
+    btop
     ripgrep
     claude-code
     qbittorrent
