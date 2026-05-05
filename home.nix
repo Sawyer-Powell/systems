@@ -57,6 +57,15 @@
     '';
   };
 
+  # Auto-launch Steam in Big Picture mode when KDE starts
+  xdg.configFile."autostart/steam.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Steam
+    Exec=steam -gamepadui
+    Hidden=false
+  '';
+
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
 

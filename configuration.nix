@@ -22,6 +22,17 @@
 
   # Mullvad VPN daemon
   services.mullvad-vpn.enable = true;
+  systemd.services.mullvad-auto-connect = {
+    description = "Enable Mullvad auto-connect";
+    after = [ "mullvad-daemon.service" ];
+    wants = [ "mullvad-daemon.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.mullvad}/bin/mullvad auto-connect set on";
+      RemainAfterExit = true;
+    };
+  };
 
   # ── Locale ──────────────────────────────────────────
   time.timeZone = "America/Los_Angeles";
@@ -97,16 +108,6 @@
     remotePlay.openFirewall = true;
   };
   programs.gamemode.enable = true;
-  systemd.user.services.steam-big-picture = {
-    description = "Steam Big Picture Mode";
-    wantedBy = [ "graphical-session.target" ];
-    partOf = [ "graphical-session.target" ];
-    serviceConfig = {
-      ExecStart = "steam -gamepadui";
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
-  };
 
   # ── User ────────────────────────────────────────────
   users.users.sawyer = {
