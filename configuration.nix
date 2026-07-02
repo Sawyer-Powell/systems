@@ -32,19 +32,9 @@
   networking.hostName = "couchtop";
   networking.networkmanager.enable = true;
 
-  # Mullvad VPN daemon
+  # Mullvad VPN daemon. Keep Mullvad available, but do not enable
+  # auto-connect at boot/login while the niri session is being stabilized.
   services.mullvad-vpn.enable = true;
-  systemd.services.mullvad-auto-connect = {
-    description = "Enable Mullvad auto-connect";
-    after = [ "mullvad-daemon.service" ];
-    wants = [ "mullvad-daemon.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = "${pkgs.mullvad}/bin/mullvad auto-connect set on";
-      RemainAfterExit = true;
-    };
-  };
 
   # ── Locale ──────────────────────────────────────────
   time.timeZone = "America/Los_Angeles";
