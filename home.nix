@@ -63,13 +63,15 @@ in
     '';
   };
 
-  # Auto-launch Steam in Big Picture mode when KDE starts
-  xdg.configFile."autostart/steam.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Steam
-    Exec=steam -gamepadui
-    Hidden=false
+  # Steam is installed, but do not auto-launch it while the niri session and
+  # xwayland-satellite setup are being stabilized. Steam may create XDG
+  # autostart entries itself, so remove the common variants on activation.
+  home.activation.disableSteamAutostart = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    rm -f \
+      "$HOME/.config/autostart/steam.desktop" \
+      "$HOME/.config/autostart/Steam.desktop" \
+      "$HOME/.config/autostart/steam"*.desktop \
+      "$HOME/.config/autostart/Steam"*.desktop
   '';
 
   # Let Home Manager manage itself
