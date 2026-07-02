@@ -34,6 +34,7 @@
       '';
       pi = import ./pi.nix { inherit pkgs; };
       eden = import ./eden-emulator.nix { inherit pkgs; };
+      polytoken = import ./polytoken.nix { inherit pkgs; };
     };
 
     # ── Apps (runnable via `nix run .#eden`) ─────────

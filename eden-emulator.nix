@@ -2,11 +2,11 @@
 
 pkgs.stdenvNoCC.mkDerivation {
   pname = "eden";
-  version = "7d0e79335e";
+  version = "5219b9f3d2";
 
   src = pkgs.fetchurl {
-    url = "https://nightly.eden-emu.dev/v1777747568.7d0e79335e/Eden-Linux-7d0e79335e-amd64-clang-pgo.AppImage";
-    hash = "sha256-bG0QwCNlvvF3SAV1EusQ8K3oieEFpHc4lBCu5YU9ExQ=";
+    url = "https://nightly.eden-emu.dev/v1781122546.5219b9f3d2/Eden-Linux-5219b9f3d2-amd64-clang-pgo.AppImage";
+    hash = "sha256-yBiUo8lZBpzqSmQxkXxXAza2elCaSEnKWwaKxf4430E=";
   };
 
   dontUnpack = true;

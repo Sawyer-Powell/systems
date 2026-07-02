@@ -1,5 +1,8 @@
 { config, pkgs, lib, ... }:
 
+let
+  polytoken = import ./polytoken.nix { inherit pkgs; };
+in
 {
   home.username = "sawyer";
   home.homeDirectory = "/home/sawyer";
@@ -10,7 +13,6 @@
     zellij
     btop
     ripgrep
-    claude-code
     qbittorrent
     fd
     mullvad
@@ -24,6 +26,7 @@
     firefox
     ghostty
     neovim
+    polytoken
   ];
 
   # ── Git ─────────────────────────────────────────────
