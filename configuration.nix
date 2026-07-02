@@ -32,9 +32,10 @@
   networking.hostName = "couchtop";
   networking.networkmanager.enable = true;
 
-  # Mullvad VPN daemon. Keep Mullvad available, but do not enable
-  # auto-connect at boot/login while the niri session is being stabilized.
-  services.mullvad-vpn.enable = true;
+  # Mullvad VPN daemon. Keep the Mullvad client package available, but do not
+  # start the system daemon automatically at boot/login while the niri/Steam
+  # session behavior is being stabilized.
+  services.mullvad-vpn.enable = false;
 
   # ── Locale ──────────────────────────────────────────
   time.timeZone = "America/Los_Angeles";
@@ -86,19 +87,26 @@
     nodejs_22
     pnpm_9
     ddcutil          # monitor brightness via DDC/CI
+    playerctl        # MPRIS media keys: play/pause/next/previous
+    blueman          # Bluetooth GUI/manager
+
+    # Niri X11 app support: Steam and other X11 apps need
+    # xwayland-satellite in PATH for niri's automatic integration.
+    xwayland-satellite
+
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.brightness
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.pi
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.eden
   ];
 
-  # ── KDE Plasma Desktop ─────────────────────────────
-  # SDDM auto-logs into KDE, which is the Wayland compositor
-  # (replacing gamescope). All system controls built-in.
-  services.desktopManager.plasma6.enable = true;
+  # ── Niri Wayland compositor ────────────────────────
+  programs.niri.enable = true;
+  systemd.user.services.niri.enableDefaultPath = false;
   services.displayManager.sddm = {
     enable = true;
     wayland.enable = true;
   };
+  services.displayManager.defaultSession = "niri";
   services.displayManager.autoLogin = {
     enable = true;
     user = "sawyer";
@@ -108,6 +116,12 @@
   programs.steam = {
     enable = true;
     remotePlay.openFirewall = true;
+    # Work around Steam Input / Steam Controller mouse emulation on Wayland
+    # by preloading libextest.so into Steam. This translates XTEST-style
+    # input into uinput events, which helps when niri lacks native EIS/libei
+    # emulated-input support.
+    extest.enable = true;
+
   };
 
   environment.sessionVariables = {
@@ -116,6 +130,7 @@
   };
 
   programs.gamemode.enable = true;
+  programs.gamescope.enable = true;
 
   # ── User ────────────────────────────────────────────
   users.users.sawyer = {
@@ -140,7 +155,7 @@
   # ── GPG ────────────────────────────────────────────
   programs.gnupg.agent = {
     enable = true;
-    pinentryPackage = pkgs.pinentry-qt;  # works with KDE/Plasma
+    pinentryPackage = pkgs.pinentry-gnome3;
     enableSSHSupport = true;             # lets GPG act as SSH agent
   };
 
@@ -167,6 +182,7 @@
     enable = true;
     powerOnBoot = true;
   };
+  services.blueman.enable = true;
 
   # ── Nix settings ────────────────────────────────────
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
