@@ -1,54 +1,79 @@
 {
-  description = "couchtop — gaming console NixOS";
+  description = "Sawyer's NixOS and macOS systems";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, nix-darwin, ... }@inputs:
   let
-    system = "x86_64-linux";
-    pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+    systems = [
+      "x86_64-linux"
+      "aarch64-linux"
+      "aarch64-darwin"
+    ];
+
+    packageOutputs = import ./packages.nix {
+      inherit self nixpkgs systems;
+    };
   in
-  {
-    # ── Packages ────────────────────────────────────
-    packages.${system} = {
-      brightness = pkgs.writeShellApplication {
-        name = "brightness";
-        runtimeInputs = with pkgs; [ ddcutil gnugrep ];
-        text = builtins.readFile ./dotfiles/scripts/monitor-brightness;
-      };
-      eden = import ./eden-emulator.nix { inherit pkgs; };
-      polytoken = import ./polytoken.nix { inherit pkgs; };
-    };
-
-    # ── Apps (runnable via `nix run .#eden`) ─────────
-    apps.${system} = {
-      eden = {
-        type = "app";
-        program = "${self.packages.${system}.eden}/bin/eden";
-      };
-    };
-
-    # ── NixOS system configuration ──────────────────
+  packageOutputs
+  // {
+    # ── NixOS systems ─────────────────────────────────
     nixosConfigurations.couchtop = nixpkgs.lib.nixosSystem {
-      inherit system;
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
       modules = [
-        ./configuration.nix
-        ./hardware-configuration.nix
-        { _module.args.inputs = inputs; }
+        ./hosts/couchtop
 
         home-manager.nixosModules.home-manager
         {
           home-manager.useGlobalPkgs = true;
           home-manager.useUserPackages = true;
-          home-manager.users.sawyer = import ./home.nix;
+          home-manager.backupFileExtension = "hm-backup";
+          home-manager.extraSpecialArgs = {
+            inherit inputs;
+            homeDirectory = "/home/sawyer";
+            dotfilesPath = "/home/sawyer/nixos-config/dotfiles";
+          };
+          home-manager.users.sawyer.imports = [
+            ./home/sawyer
+            ./home/sawyer/linux.nix
+          ];
         }
       ];
     };
+
+    # ── macOS systems ─────────────────────────────────
+    # Add a real host here when ready, e.g.:
+    # darwinConfigurations.macbook = nix-darwin.lib.darwinSystem {
+    #   system = "aarch64-darwin";
+    #   specialArgs = { inherit inputs; };
+    #   modules = [
+    #     ./darwin.nix
+    #     home-manager.darwinModules.home-manager
+    #     {
+    #       home-manager.useGlobalPkgs = true;
+    #       home-manager.useUserPackages = true;
+    #       home-manager.extraSpecialArgs = {
+    #         inherit inputs;
+    #         homeDirectory = "/Users/sawyer";
+    #         dotfilesPath = "/Users/sawyer/nixos-config/dotfiles";
+    #       };
+    #       home-manager.users.sawyer.imports = [
+    #         ./home/sawyer
+    #         ./home/sawyer/darwin.nix
+    #       ];
+    #     }
+    #   ];
+    # };
   };
 }
