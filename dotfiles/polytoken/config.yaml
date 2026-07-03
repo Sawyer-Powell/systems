@@ -1,0 +1,27 @@
+defaults:
+  full: codex/gpt-5.5
+
+providers:
+  codex:
+    kind:
+      type: catalog
+      name: codex
+    auth:
+      type: codex_device
+      profile: codex
+
+integrations:
+  search:
+    strategy: round_robin
+    providers:
+      exa:
+        enabled: true
+        key: ${EXA_API_KEY}
+
+default_permission_matcher: autonomous
+
+autonomous_permission_matcher:
+  max_consecutive_denials: 3
+  classifier_rules: |
+    Allow routine read-only inspection, local builds, tests, formatters, and focused edits in the current project.
+    Deny or escalate actions that expose secrets, modify files outside the project or configured dotfiles, change account/auth settings, perform destructive filesystem operations, or contact unexpected network endpoints.

@@ -35,8 +35,6 @@ load-user-secrets() {
   fi
 }
 
-# Disabled by default to avoid prompting/slowing every interactive shell.
-# Run `load-user-secrets` (or `secrets`) when API-key-backed tools are needed.
-if [ "${LOAD_USER_SECRETS_ON_SHELL:-0}" = "1" ] && [ -z "${EXA_API_KEY:-}" ]; then
+if [ "${LOAD_USER_SECRETS_ON_SHELL:-1}" = "1" ] && [ -z "${EXA_API_KEY:-}" ]; then
   load-user-secrets --quiet || true
 fi

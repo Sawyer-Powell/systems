@@ -79,6 +79,10 @@ in
   };
 
   xdg.configFile."shell/secrets.sh".source = ./dotfiles/shell/secrets.sh;
+  xdg.configFile."polytoken/config.yaml" = {
+    source = config.lib.file.mkOutOfStoreSymlink "/home/sawyer/nixos-config/dotfiles/polytoken/config.yaml";
+    force = true;
+  };
 
   programs.bash = {
     enable = true;
