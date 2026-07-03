@@ -95,7 +95,6 @@
     xwayland-satellite
 
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.brightness
-    inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.pi
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.eden
   ];
 
@@ -131,6 +130,13 @@
 
   programs.gamemode.enable = true;
   programs.gamescope.enable = true;
+
+  # ── 1Password ───────────────────────────────────────
+  programs._1password.enable = true;
+  programs._1password-gui = {
+    enable = true;
+    polkitPolicyOwners = [ "sawyer" ];
+  };
 
   # ── User ────────────────────────────────────────────
   users.users.sawyer = {

@@ -1,0 +1,68 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "vim": {
+    "toggle_relative_line_numbers": true
+  },
+  "agent": {
+    "show_turn_stats": true,
+    "tool_permissions": {
+      "tools": {
+        "copy_path": {
+          "default": "allow"
+        },
+        "fetch": {
+          "default": "allow"
+        },
+        "restore_file_from_disk": {
+          "default": "allow"
+        },
+        "terminal": {
+          "default": "allow",
+          "always_allow": [
+            {
+              "pattern": "^cd\\s+py(\\s|$)"
+            }
+          ]
+        }
+      }
+    },
+    "default_model": {
+      "provider": "anthropic",
+      "model": "claude-opus-4-6-latest",
+      "enable_thinking": false
+    },
+    "favorite_models": [],
+    "model_parameters": []
+  },
+  "agent_servers": {
+    "claude-acp": {
+      "type": "registry"
+    }
+  },
+  "tab_bar": {
+    "show": false
+  },
+  "title_bar": {
+    "show_sign_in": false
+  },
+  "disable_ai": false,
+  "telemetry": {
+    "diagnostics": true,
+    "metrics": false
+  },
+  "vim_mode": true,
+  "ui_font_size": 15.0,
+  "buffer_font_size": 14.0,
+  "theme": {
+    "mode": "system",
+    "light": "Gruvbox Light",
+    "dark": "Gruvbox Dark Hard"
+  }
+}

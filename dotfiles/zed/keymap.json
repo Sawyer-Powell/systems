@@ -1,0 +1,98 @@
+[
+  {
+    "context": "Terminal",
+    "bindings": {
+      "shift-enter": [
+        "terminal::SendText",
+        "\u001b\r"
+      ],
+      "alt-/": "pane::SplitRight",
+      "alt-.": "pane::SplitDown",
+      "alt-h": "workspace::ActivatePaneLeft",
+      "alt-j": "workspace::ActivatePaneDown",
+      "alt-k": "workspace::ActivatePaneUp",
+      "alt-l": "workspace::ActivatePaneRight",
+      "alt-H": ["workspace::MoveItemToPaneInDirection", { "direction": "left" }],
+      "alt-J": ["workspace::MoveItemToPaneInDirection", { "direction": "down" }],
+      "alt-K": ["workspace::MoveItemToPaneInDirection", { "direction": "up" }],
+      "alt-L": ["workspace::MoveItemToPaneInDirection", { "direction": "right" }],
+      "alt-;": "pane::JoinAll",
+      "alt-w": "pane::JoinIntoNext",
+      "alt-t": "workspace::NewCenterTerminal",
+      "alt-b": "tab_switcher::ToggleAll"
+    }
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-l": "agent::ToggleFocus",
+      "alt-g": ["task::Spawn", { "task_name": "jjui", "reveal_target": "center" }]
+    }
+  },
+  {
+    "context": "vim_mode == visual",
+    "bindings": {
+      "cmd-l": "agent::AddSelectionToThread"
+    }
+  },
+  {
+    "context": "vim_mode == normal && !menu",
+    "bindings": {
+      "space /": "pane::SplitRight",
+      "space .": "pane::SplitDown",
+      "space h": "workspace::ActivatePaneLeft",
+      "space j": "workspace::ActivatePaneDown",
+      "space k": "workspace::ActivatePaneUp",
+      "space l": "workspace::ActivatePaneRight",
+      "space H": ["workspace::MoveItemToPaneInDirection", { "direction": "left" }],
+      "space J": ["workspace::MoveItemToPaneInDirection", { "direction": "down" }],
+      "space K": ["workspace::MoveItemToPaneInDirection", { "direction": "up" }],
+      "space L": ["workspace::MoveItemToPaneInDirection", { "direction": "right" }],
+      "space ;": "pane::JoinAll",
+      "space w": "pane::JoinIntoNext",
+      "space t": "workspace::NewCenterTerminal",
+      "space b": "tab_switcher::ToggleAll",
+      "space s f": "file_finder::Toggle",
+      "cmd-l": "agent::ToggleFocus",
+      "space g": ["task::Spawn", { "task_name": "jjui", "reveal_target": "center" }]
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "alt-/": "pane::SplitRight",
+      "alt-.": "pane::SplitDown",
+      "alt-h": "workspace::ActivatePaneLeft",
+      "alt-j": "workspace::ActivatePaneDown",
+      "alt-k": "workspace::ActivatePaneUp",
+      "alt-l": "workspace::ActivatePaneRight",
+      "alt-H": ["workspace::MoveItemToPaneInDirection", { "direction": "left" }],
+      "alt-J": ["workspace::MoveItemToPaneInDirection", { "direction": "down" }],
+      "alt-K": ["workspace::MoveItemToPaneInDirection", { "direction": "up" }],
+      "alt-L": ["workspace::MoveItemToPaneInDirection", { "direction": "right" }],
+      "alt-;": "pane::JoinAll",
+      "alt-w": "pane::JoinIntoNext",
+      "alt-t": "workspace::NewCenterTerminal",
+      "alt-b": "tab_switcher::ToggleAll"
+    }
+  },
+  {
+    "context": "!Editor",
+    "bindings": {
+      "alt-/": "pane::SplitRight",
+      "alt-.": "pane::SplitDown",
+      "alt-h": "workspace::ActivatePaneLeft",
+      "alt-j": "workspace::ActivatePaneDown",
+      "alt-k": "workspace::ActivatePaneUp",
+      "alt-l": "workspace::ActivatePaneRight",
+      "alt-H": ["workspace::MoveItemToPaneInDirection", { "direction": "left" }],
+      "alt-J": ["workspace::MoveItemToPaneInDirection", { "direction": "down" }],
+      "alt-K": ["workspace::MoveItemToPaneInDirection", { "direction": "up" }],
+      "alt-L": ["workspace::MoveItemToPaneInDirection", { "direction": "right" }],
+      "alt-;": "pane::JoinAll",
+      "alt-w": "pane::JoinIntoNext",
+      "alt-t": "workspace::NewCenterTerminal",
+      "alt-b": "tab_switcher::ToggleAll"
+    }
+  }
+]

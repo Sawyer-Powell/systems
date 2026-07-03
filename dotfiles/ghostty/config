@@ -1,0 +1,4 @@
+theme = gruvbox-material-dark-hard
+
+# Map Cmd+L → send ESC+c (which zellij reads as Alt+c → toggle floats)
+keybind = cmd+l=text:\x1bc

@@ -17,22 +17,11 @@
   {
     # ── Packages ────────────────────────────────────
     packages.${system} = {
-      brightness = pkgs.writeShellScriptBin "brightness" ''
-        set -e
-        case "''${1:-show}" in
-          show)  ddcutil getvcp 10 ;;
-          up)    cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
-                 new=$((cur + 10))
-                 [ "$new" -gt 100 ] && new=100
-                 ddcutil setvcp 10 "$new" ;;
-          down)  cur=$(ddcutil getvcp 10 2>/dev/null | grep -oP 'current value =\s*\K[0-9]+')
-                 new=$((cur - 10))
-                 [ "$new" -lt 0 ] && new=0
-                 ddcutil setvcp 10 "$new" ;;
-          *)     ddcutil setvcp 10 "$1" ;;
-        esac
-      '';
-      pi = import ./pi.nix { inherit pkgs; };
+      brightness = pkgs.writeShellApplication {
+        name = "brightness";
+        runtimeInputs = with pkgs; [ ddcutil gnugrep ];
+        text = builtins.readFile ./dotfiles/scripts/monitor-brightness;
+      };
       eden = import ./eden-emulator.nix { inherit pkgs; };
       polytoken = import ./polytoken.nix { inherit pkgs; };
     };

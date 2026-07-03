@@ -1,0 +1,10 @@
+[
+  {
+    "label": "jjui",
+    "command": "jjui",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "always"
+  }
+]

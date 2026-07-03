@@ -1,0 +1,11 @@
+set -euo pipefail
+
+choice=$(
+  niri msg -j windows \
+    | jq -r '.[] | "\(.id)  \(.app_id // "unknown") — \(.title // "")"' \
+    | fuzzel --dmenu --prompt 'Window: '
+) || exit 0
+
+[ -n "$choice" ] || exit 0
+id="${choice%% *}"
+niri msg action focus-window --id "$id"
