@@ -52,6 +52,7 @@
   environment.systemPackages = with pkgs; [
     jq
     ripgrep
+    gh
     python314
     cargo
     rustc
