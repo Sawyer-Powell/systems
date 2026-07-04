@@ -20,6 +20,7 @@ in
     mullvad
     ghostty
     fuzzel
+    zed-editor
 
     pavucontrol
     helvum

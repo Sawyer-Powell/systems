@@ -35,7 +35,18 @@
     ];
   };
 
-  # ── 1Password ───────────────────────────────────────
+  # ── Secrets / keyring ───────────────────────────────
+  # GNOME Keyring provides the Freedesktop Secret Service used by apps like Zed.
+  # SDDM unlocks it via PAM when logging in with the user password.
+  services.gnome.gnome-keyring.enable = true;
+  security.pam.services.sddm.enableGnomeKeyring = true;
+  environment.systemPackages = with pkgs; [
+    libsecret # secret-tool for shell secret cache reads/writes
+    seahorse  # GUI for inspecting the login keyring
+  ];
+
+  # 1Password remains the source of truth for SSH keys, Git signing, and
+  # explicitly loaded shell/API secrets.
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = true;

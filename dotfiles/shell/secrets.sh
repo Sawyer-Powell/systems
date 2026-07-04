@@ -36,11 +36,6 @@ load-user-secrets() {
 
   config="${USER_SECRETS_FILE:-$HOME/.config/shell/user-secrets.env}"
 
-  if ! command -v op >/dev/null 2>&1; then
-    echo "1Password CLI (op) is not available on PATH" >&2
-    return 127
-  fi
-
   if [ ! -f "$config" ]; then
     echo "Secrets config not found: $config" >&2
     return 1
@@ -53,6 +48,7 @@ load-user-secrets() {
 
     name="${line%%=*}"
     ref="${line#*=}"
+    value=""
 
     if [ -z "$name" ] || [ -z "$ref" ] || [ "$name" = "$ref" ]; then
       echo "Invalid secret line: $line" >&2
@@ -60,11 +56,27 @@ load-user-secrets() {
       continue
     fi
 
-    value="$(op read "$ref")"
-    if [ $? -ne 0 ]; then
-      echo "Failed to read $name from 1Password ref: $ref" >&2
-      failed=1
-      continue
+    if command -v secret-tool >/dev/null 2>&1; then
+      value="$(secret-tool lookup service shell name "$name" 2>/dev/null || true)"
+    fi
+
+    if [ -z "$value" ]; then
+      if ! command -v op >/dev/null 2>&1; then
+        echo "1Password CLI (op) is not available on PATH" >&2
+        failed=1
+        continue
+      fi
+
+      value="$(op read "$ref")"
+      if [ $? -ne 0 ]; then
+        echo "Failed to read $name from 1Password ref: $ref" >&2
+        failed=1
+        continue
+      fi
+
+      if command -v secret-tool >/dev/null 2>&1; then
+        printf '%s' "$value" | secret-tool store --label="$name" service shell name "$name" 2>/dev/null || true
+      fi
     fi
 
     _load_user_secret_export "$name" "$value"
@@ -72,7 +84,7 @@ load-user-secrets() {
   done < "$config"
 
   if [ "$quiet" -ne 1 ]; then
-    echo "Loaded $loaded secret(s) from 1Password into this shell."
+    echo "Loaded $loaded secret(s) into this shell."
   fi
 
   [ "$failed" -eq 0 ]

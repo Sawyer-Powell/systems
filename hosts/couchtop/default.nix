@@ -81,10 +81,9 @@
     wayland.enable = true;
   };
   services.displayManager.defaultSession = "niri";
-  services.displayManager.autoLogin = {
-    enable = true;
-    user = "sawyer";
-  };
+
+  # Password login lets PAM unlock the user's Secret Service keyring at session start.
+  services.displayManager.autoLogin.enable = false;
 
   # ── Steam + Gaming ─────────────────────────────────
   programs.steam = {
