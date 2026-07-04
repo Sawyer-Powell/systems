@@ -1,0 +1,13 @@
+#:schema https://docs.jj-vcs.dev/latest/config-schema.json
+
+[user]
+name = "Sawyer Powell"
+email = "sawyerhpowell@gmail.com"
+
+[signing]
+sign-all = true
+backend = "ssh"
+key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1AbbXZzfx3O4xtwBzMSGetMEy9AfLRHwdN339qE2gq id_ed25519"
+
+[signing.backends.ssh]
+program = "op-ssh-sign"

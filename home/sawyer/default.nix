@@ -1,5 +1,10 @@
 { config, pkgs, lib, inputs, userHome, dotfilesDir, ... }:
 
+let
+  opSshSignDarwin = pkgs.writeShellScriptBin "op-ssh-sign" ''
+    exec /Applications/1Password.app/Contents/MacOS/op-ssh-sign "$@"
+  '';
+in
 {
   imports = [
     ./secrets.nix
@@ -32,6 +37,8 @@
     ninja
 
     zsh
+  ] ++ lib.optionals pkgs.stdenv.isDarwin [
+    opSshSignDarwin
   ] ++ lib.optionals pkgs.stdenv.isLinux [
     gimp
     firefox
@@ -55,7 +62,7 @@
     enable = true;
     enableDefaultConfig = false;
     settings."*".IdentityAgent = if pkgs.stdenv.isDarwin then
-      "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+      ''"${userHome}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"''
     else
       "~/.1password/agent.sock";
   };
@@ -75,7 +82,10 @@
       user.email = "sawyerhpowell@gmail.com";
 
       gpg.format = "ssh";
-      gpg.ssh.program = "op-ssh-sign";
+      gpg.ssh.program = if pkgs.stdenv.isDarwin then
+        "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
+      else
+        "op-ssh-sign";
       user.signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1AbbXZzfx3O4xtwBzMSGetMEy9AfLRHwdN339qE2gq id_ed25519";
       commit.gpgsign = true;
       tag.gpgsign = true;
@@ -84,6 +94,12 @@
       pull.rebase = true;
       push.autoSetupRemote = true;
     };
+  };
+
+  # ── Jujutsu ─────────────────────────────────────────
+  xdg.configFile."jj/config.toml" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/jj/config.toml";
+    force = true;
   };
 
   # ── Shells ──────────────────────────────────────────
