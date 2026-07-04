@@ -137,18 +137,13 @@ in
     force = true;
   };
 
-  xdg.configFile."polytoken/facets/coach.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/facets/coach.md";
+  xdg.configFile."polytoken/facets" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/facets";
     force = true;
   };
 
-  xdg.configFile."polytoken/skills/socratic-coding-coach/SKILL.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills/socratic-coding-coach/SKILL.md";
-    force = true;
-  };
-
-  xdg.configFile."polytoken/skills/learning-session-review/SKILL.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills/learning-session-review/SKILL.md";
+  xdg.configFile."polytoken/skills" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills";
     force = true;
   };
 
