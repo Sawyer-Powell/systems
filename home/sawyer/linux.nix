@@ -1,6 +1,8 @@
 { config, pkgs, lib, ... }:
 
 let
+  bigSurWallpaper = ../../dotfiles/wallpapers/macos-big-sur-dark.jpg;
+
   monitorBrightness = pkgs.writeShellApplication {
     name = "monitor-brightness";
     runtimeInputs = with pkgs; [ ddcutil gnugrep ];
@@ -12,6 +14,16 @@ let
     runtimeInputs = with pkgs; [ niri jq fuzzel ];
     text = builtins.readFile ../../dotfiles/scripts/niri-window-switcher;
   };
+
+  screenshotToClipboard = pkgs.writeShellApplication {
+    name = "screenshot-to-clipboard";
+    runtimeInputs = with pkgs; [ grim slurp wl-clipboard libnotify ];
+    text = ''
+      geometry=$(slurp)
+      grim -g "$geometry" -t png - | wl-copy --type image/png
+      notify-send "Screenshot copied" "Selected area copied to clipboard."
+    '';
+  };
 in
 {
   # ── Linux desktop/user packages ─────────────────────
@@ -22,6 +34,8 @@ in
     fuzzel
     zed-editor
     obsidian
+    screenshotToClipboard
+    swaybg
 
     pavucontrol
     helvum
@@ -59,6 +73,11 @@ in
         "@playerctl@"
         "@monitorBrightness@"
         "@onePassword@"
+        "@swaybg@"
+        "@bigSurWallpaper@"
+        "@screenshotToClipboard@"
+        "@cursorTheme@"
+        "@cursorSize@"
       ]
       [
         "${pkgs.ghostty}/bin/ghostty"
@@ -71,6 +90,11 @@ in
         "${pkgs.playerctl}/bin/playerctl"
         "${monitorBrightness}/bin/monitor-brightness"
         "${pkgs._1password-gui}/bin/1password"
+        "${pkgs.swaybg}/bin/swaybg"
+        "${bigSurWallpaper}"
+        "${screenshotToClipboard}/bin/screenshot-to-clipboard"
+        "Bibata-Modern-Ice"
+        "24"
       ]
       (builtins.readFile ../../dotfiles/niri/config.kdl);
   };

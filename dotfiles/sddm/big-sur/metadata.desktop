@@ -1,0 +1,17 @@
+[SddmGreeterTheme]
+Name=Big Sur
+Description=Minimal Big Sur wallpaper theme for SDDM
+Author=Sawyer
+Copyright=2026 Sawyer
+License=CC-BY-SA
+Type=sddm-theme
+Version=1.0
+Website=
+Screenshot=
+MainScript=Main.qml
+ConfigFile=theme.conf
+TranslationsDirectory=translations
+Email=
+Theme-Id=big-sur
+Theme-API=2.0
+QtVersion=6

@@ -14,6 +14,13 @@ output "LG Electronics LG ULTRAGEAR+ 408NTTQ8J449" {
     scale 1.5
 }
 
+cursor {
+    xcursor-theme "@cursorTheme@"
+    xcursor-size @cursorSize@
+}
+
+spawn-at-startup "@swaybg@" "--image" "@bigSurWallpaper@" "--mode" "fill"
+
 // Keep 1Password resident so system authentication can unlock it after sign-in.
 spawn-at-startup "@onePassword@" "--silent"
 
@@ -55,6 +62,7 @@ binds {
     Mod+Ctrl+B hotkey-overlay-title="Open Bluetooth Manager: Blueman" { spawn "@bluemanManager@"; }
     Mod+Ctrl+M hotkey-overlay-title="Open Monitor Brightness: Luminance" { spawn "@luminance@"; }
     Mod+Shift+Slash hotkey-overlay-title="Show Hotkey Overlay" { show-hotkey-overlay; }
+    Mod+Shift+4 hotkey-overlay-title="Screenshot Area to Clipboard" { spawn "@screenshotToClipboard@"; }
     Mod+O hotkey-overlay-title="Toggle Overview" { toggle-overview; }
 
     XF86AudioRaiseVolume allow-when-locked=true { spawn "@wpctl@" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+" "-l" "1.0"; }

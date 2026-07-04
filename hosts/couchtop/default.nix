@@ -1,5 +1,20 @@
 { config, pkgs, lib, inputs, ... }:
 
+let
+  bigSurWallpaper = ../../dotfiles/wallpapers/macos-big-sur-dark.jpg;
+
+  sddmBigSurTheme = pkgs.stdenvNoCC.mkDerivation {
+    pname = "sddm-big-sur-theme";
+    version = "1.0";
+    src = ../../dotfiles/sddm/big-sur;
+
+    installPhase = ''
+      mkdir -p $out/share/sddm/themes/big-sur/Backgrounds
+      cp -r . $out/share/sddm/themes/big-sur
+      cp ${bigSurWallpaper} $out/share/sddm/themes/big-sur/Backgrounds/macos-big-sur-dark.jpg
+    '';
+  };
+in
 {
   imports = [
     ./hardware-configuration.nix
@@ -64,6 +79,8 @@
     ddcutil          # monitor brightness via DDC/CI
     playerctl        # MPRIS media keys: play/pause/next/previous
     blueman          # Bluetooth GUI/manager
+    bibata-cursors   # Shared cursor theme for SDDM and Niri
+    sddmBigSurTheme  # SDDM greeter theme
 
     # Niri X11 app support: Steam and other X11 apps need
     # xwayland-satellite in PATH for niri's automatic integration.
@@ -78,7 +95,23 @@
   systemd.user.services.niri.enableDefaultPath = false;
   services.displayManager.sddm = {
     enable = true;
-    wayland.enable = true;
+    wayland = {
+      enable = true;
+      compositor = "kwin";
+    };
+    theme = "big-sur";
+    extraPackages = [ sddmBigSurTheme ];
+
+    # Keep SDDM's greeter cursor in sync with Niri's cursor config.
+    # SDDM/Wayland cursor handling is compositor-dependent; using KWin avoids
+    # Weston greeter cursor issues and needs Qt layer-shell integration.
+    settings = {
+      General.GreeterEnvironment = "QT_WAYLAND_SHELL_INTEGRATION=layer-shell,XCURSOR_THEME=Bibata-Modern-Ice,XCURSOR_SIZE=24";
+      Theme = {
+        CursorTheme = "Bibata-Modern-Ice";
+        CursorSize = 24;
+      };
+    };
   };
   services.displayManager.defaultSession = "niri";
 
