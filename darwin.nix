@@ -3,9 +3,15 @@
 {
   nixpkgs.config.allowUnfree = true;
 
-  # nix-darwin defaults for future macOS hosts. Keep this broad and small until
-  # there is a real Mac host using it.
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  # Nix itself is installed and managed by Determinate Systems on macOS.
+  # Let nix-darwin manage the rest of the system, but do not let it take over
+  # the Nix daemon or nix.conf.
+  nix.enable = false;
+
+  system.stateVersion = 7;
+  system.primaryUser = "sawyer";
+
+  users.users.sawyer.home = "/Users/sawyer";
 
   # The 1Password GUI app is typically installed as a Homebrew cask on macOS,
   # while the CLI remains managed by Home Manager/nixpkgs.
@@ -14,7 +20,9 @@
     casks = [
       "1password"
       "firefox"
+      "ghostty"
       "gimp"
+      "zed"
     ];
   };
 }

@@ -1,5 +1,43 @@
 alias secrets=load-user-secrets
 
+_load_user_secret_from_cache() {
+  local name
+
+  name="$1"
+
+  case "$(uname -s)" in
+    Linux)
+      command -v secret-tool >/dev/null 2>&1 || return 1
+      secret-tool lookup service shell name "$name" 2>/dev/null
+      ;;
+    Darwin)
+      command -v security >/dev/null 2>&1 || return 1
+      security find-generic-password -a "$USER" -s "shell:$name" -w 2>/dev/null
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+_store_user_secret_in_cache() {
+  local name value
+
+  name="$1"
+  value="$2"
+
+  case "$(uname -s)" in
+    Linux)
+      command -v secret-tool >/dev/null 2>&1 || return 0
+      printf '%s' "$value" | secret-tool store --label="$name" service shell name "$name" 2>/dev/null || true
+      ;;
+    Darwin)
+      command -v security >/dev/null 2>&1 || return 0
+      security add-generic-password -U -a "$USER" -s "shell:$name" -l "$name" -w "$value" >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
 _load_user_secret_export() {
   local name value
 
@@ -56,9 +94,7 @@ load-user-secrets() {
       continue
     fi
 
-    if command -v secret-tool >/dev/null 2>&1; then
-      value="$(secret-tool lookup service shell name "$name" 2>/dev/null || true)"
-    fi
+    value="$(_load_user_secret_from_cache "$name" || true)"
 
     if [ -z "$value" ]; then
       if ! command -v op >/dev/null 2>&1; then
@@ -74,9 +110,7 @@ load-user-secrets() {
         continue
       fi
 
-      if command -v secret-tool >/dev/null 2>&1; then
-        printf '%s' "$value" | secret-tool store --label="$name" service shell name "$name" 2>/dev/null || true
-      fi
+      _store_user_secret_in_cache "$name" "$value"
     fi
 
     _load_user_secret_export "$name" "$value"

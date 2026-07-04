@@ -1,5 +1,11 @@
 { config, pkgs, lib, ... }:
 
 {
-  # macOS-specific Home Manager settings can go here once a Darwin host is added.
+  programs.bash.initExtra = ''
+    alias switch="sudo darwin-rebuild switch --flake ~/repos/systems#macbook"
+  '';
+
+  home.file.".zshrc".text = lib.mkAfter ''
+    alias switch="sudo darwin-rebuild switch --flake ~/repos/systems#macbook"
+  '';
 }

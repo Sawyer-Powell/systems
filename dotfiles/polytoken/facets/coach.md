@@ -13,7 +13,8 @@ polytoken:
     - shell_exec
 
   skills_allow:
-    - tag!learning
+    - socratic-coding-coach
+    - learning-session-review
 
   autonomous_hint: >
     This facet is for software engineering skill-building, not task completion.

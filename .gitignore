@@ -1,3 +1,7 @@
 .claude
 .jj
 .git
+
+# Nix build outputs
+result
+result-*

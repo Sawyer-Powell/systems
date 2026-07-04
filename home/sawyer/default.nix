@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, homeDirectory, dotfilesPath, ... }:
+{ config, pkgs, lib, inputs, userHome, dotfilesDir, ... }:
 
 {
   imports = [
@@ -6,7 +6,7 @@
   ];
 
   home.username = "sawyer";
-  home.homeDirectory = homeDirectory;
+  home.homeDirectory = userHome;
 
   # ── Packages shared across Linux/macOS where available ─
   home.packages = with pkgs; [
@@ -53,9 +53,11 @@
 
   programs.ssh = {
     enable = true;
-    extraConfig = ''
-      IdentityAgent ${if pkgs.stdenv.isDarwin then "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "~/.1password/agent.sock"}
-    '';
+    enableDefaultConfig = false;
+    settings."*".IdentityAgent = if pkgs.stdenv.isDarwin then
+      "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    else
+      "~/.1password/agent.sock";
   };
 
   # Let the 1Password SSH agent offer keys from the Personal vault. The private
@@ -115,52 +117,52 @@
 
   # ── Shared dotfiles ─────────────────────────────────
   xdg.configFile."polytoken/config.yaml" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/config.yaml";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/config.yaml";
     force = true;
   };
 
   xdg.configFile."polytoken/facets/coach.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/facets/coach.md";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/facets/coach.md";
     force = true;
   };
 
   xdg.configFile."polytoken/skills/socratic-coding-coach/SKILL.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/skills/socratic-coding-coach/SKILL.md";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills/socratic-coding-coach/SKILL.md";
     force = true;
   };
 
   xdg.configFile."polytoken/skills/learning-session-review/SKILL.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/skills/learning-session-review/SKILL.md";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills/learning-session-review/SKILL.md";
     force = true;
   };
 
   xdg.configFile."nvim" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/nvim";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/nvim";
     force = true;
   };
 
   xdg.configFile."zellij" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/zellij";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/zellij";
     force = true;
   };
 
   xdg.configFile."ghostty" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/ghostty";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/ghostty";
     force = true;
   };
 
   xdg.configFile."zed/settings.json" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/zed/settings.json";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/zed/settings.json";
     force = true;
   };
 
   xdg.configFile."zed/keymap.json" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/zed/keymap.json";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/zed/keymap.json";
     force = true;
   };
 
   xdg.configFile."zed/tasks.json" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/zed/tasks.json";
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/zed/tasks.json";
     force = true;
   };
 
