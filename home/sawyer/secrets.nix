@@ -4,6 +4,7 @@ let
   # Add new shell secrets here. Values are 1Password item refs read by `op read`.
   secrets = {
     EXA_API_KEY = "op://Personal/Exa AI/credential";
+    UMANS_API_KEY = "op://Personal/Umans/key";
   };
 
   secretLines = lib.concatStringsSep "\n"

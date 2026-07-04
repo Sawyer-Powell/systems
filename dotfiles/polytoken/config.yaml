@@ -9,6 +9,44 @@ providers:
     auth:
       type: codex_device
       profile: codex
+  umans:
+    kind:
+      type: custom_anthropic_compatible
+    url: https://api.code.umans.ai
+    protocol: umans_messages
+    auth:
+      type: static_key
+      key: ${UMANS_API_KEY}
+
+models:
+  umans-coder:
+    provider: umans
+    provider_name: umans-coder
+    variant: other
+    class: full
+    context_window: 262000
+    supports_vision: true
+  umans-flash:
+    provider: umans
+    provider_name: umans-flash
+    variant: other
+    class: mini
+    context_window: 262000
+    supports_vision: true
+  umans-kimi-k2.7:
+    provider: umans
+    provider_name: umans-kimi-k2.7
+    variant: other
+    class: full
+    context_window: 262000
+    supports_vision: true
+  umans-glm-5.2:
+    provider: umans
+    provider_name: umans-glm-5.2
+    variant: other
+    class: full
+    context_window: 205000
+    supports_vision: false
 
 integrations:
   search:
