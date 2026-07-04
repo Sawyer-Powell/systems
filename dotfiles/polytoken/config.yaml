@@ -1,6 +1,6 @@
 defaults:
   full: codex/gpt-5.5
-  mini: umans-flash
+  mini: codex/gpt-5.4-mini
 
 providers:
   codex:
