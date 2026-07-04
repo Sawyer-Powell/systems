@@ -23,6 +23,7 @@ in
 
     pavucontrol
     helvum
+    luminance
   ];
 
   programs.bash.initExtra = ''
@@ -46,6 +47,7 @@ in
         "@niriWindowSwitcher@"
         "@firefox@"
         "@bluemanManager@"
+        "@luminance@"
         "@wpctl@"
         "@playerctl@"
         "@monitorBrightness@"
@@ -56,6 +58,7 @@ in
         "${niriWindowSwitcher}/bin/niri-window-switcher"
         "${pkgs.firefox}/bin/firefox"
         "${pkgs.blueman}/bin/blueman-manager"
+        "${pkgs.luminance}/bin/com.sidevesh.Luminance"
         "${pkgs.wireplumber}/bin/wpctl"
         "${pkgs.playerctl}/bin/playerctl"
         "${monitorBrightness}/bin/monitor-brightness"

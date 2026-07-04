@@ -50,6 +50,7 @@ binds {
     Mod+Space hotkey-overlay-title="Switch Windows: fuzzel" { spawn "@niriWindowSwitcher@"; }
     Mod+B hotkey-overlay-title="Open Browser: Firefox" { spawn "@firefox@"; }
     Mod+Ctrl+B hotkey-overlay-title="Open Bluetooth Manager: Blueman" { spawn "@bluemanManager@"; }
+    Mod+Ctrl+M hotkey-overlay-title="Open Monitor Brightness: Luminance" { spawn "@luminance@"; }
     Mod+Shift+Slash hotkey-overlay-title="Show Hotkey Overlay" { show-hotkey-overlay; }
     Mod+O hotkey-overlay-title="Toggle Overview" { toggle-overview; }
 
