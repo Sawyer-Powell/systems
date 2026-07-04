@@ -93,6 +93,8 @@
 
       alias vim=nvim
       alias vi=nvim
+      alias poly="polytoken"
+      alias ask="polytoken exec"
       source "$HOME/.config/shell/secrets.sh"
     '';
   };
@@ -105,6 +107,8 @@
 
       alias vim=nvim
       alias vi=nvim
+      alias poly="polytoken"
+      alias ask="polytoken exec"
       source "$HOME/.config/shell/secrets.sh"
     '';
   };
@@ -112,6 +116,21 @@
   # ── Shared dotfiles ─────────────────────────────────
   xdg.configFile."polytoken/config.yaml" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/config.yaml";
+    force = true;
+  };
+
+  xdg.configFile."polytoken/facets/coach.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/facets/coach.md";
+    force = true;
+  };
+
+  xdg.configFile."polytoken/skills/socratic-coding-coach/SKILL.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/skills/socratic-coding-coach/SKILL.md";
+    force = true;
+  };
+
+  xdg.configFile."polytoken/skills/learning-session-review/SKILL.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesPath}/polytoken/skills/learning-session-review/SKILL.md";
     force = true;
   };
 

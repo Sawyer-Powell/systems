@@ -21,6 +21,7 @@ in
     ghostty
     fuzzel
     zed-editor
+    obsidian
 
     pavucontrol
     helvum
