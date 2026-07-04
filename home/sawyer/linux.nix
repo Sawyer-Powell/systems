@@ -20,6 +20,9 @@ in
     mullvad
     ghostty
     fuzzel
+
+    pavucontrol
+    helvum
   ];
 
   programs.bash.initExtra = ''
