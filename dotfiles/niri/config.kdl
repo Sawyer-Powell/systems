@@ -14,6 +14,9 @@ output "LG Electronics LG ULTRAGEAR+ 408NTTQ8J449" {
     scale 1.5
 }
 
+// Keep 1Password resident so system authentication can unlock it after sign-in.
+spawn-at-startup "@onePassword@" "--silent"
+
 // Dark Gruvbox-inspired Niri visuals.
 layout {
     background-color "#1d2021"

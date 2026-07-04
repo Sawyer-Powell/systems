@@ -27,6 +27,11 @@ in
     luminance
   ];
 
+  # Niri does not start a Polkit authentication agent for us. 1Password's
+  # "Unlock using system authentication" uses Polkit/PAM, so keep an agent
+  # running in the graphical user session.
+  services.polkit-gnome.enable = true;
+
   programs.bash.initExtra = ''
     alias switch="sudo nixos-rebuild switch --flake ."
   '';
@@ -52,6 +57,7 @@ in
         "@wpctl@"
         "@playerctl@"
         "@monitorBrightness@"
+        "@onePassword@"
       ]
       [
         "${pkgs.ghostty}/bin/ghostty"
@@ -63,6 +69,7 @@ in
         "${pkgs.wireplumber}/bin/wpctl"
         "${pkgs.playerctl}/bin/playerctl"
         "${monitorBrightness}/bin/monitor-brightness"
+        "${pkgs._1password-gui}/bin/1password"
       ]
       (builtins.readFile ../../dotfiles/niri/config.kdl);
   };
