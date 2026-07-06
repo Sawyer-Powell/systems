@@ -24,6 +24,17 @@ let
       notify-send "Screenshot copied" "Selected area copied to clipboard."
     '';
   };
+
+  legacyJava8 = import ../../custom_packages/temurin8-legacy.nix { inherit pkgs; };
+  prismLauncher = pkgs.prismlauncher.override {
+    jdks = with pkgs; [
+      legacyJava8
+      jdk25
+      jdk21
+      jdk17
+      jdk8
+    ];
+  };
 in
 {
   # ── Linux desktop/user packages ─────────────────────
@@ -36,6 +47,7 @@ in
     obsidian
     screenshotToClipboard
     swaybg
+    prismLauncher
 
     pavucontrol
     helvum

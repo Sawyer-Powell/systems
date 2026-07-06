@@ -19,6 +19,7 @@
     enable = true;
     casks = [
       "1password"
+      "docker-desktop"
       "firefox"
       "ghostty"
       "gimp"

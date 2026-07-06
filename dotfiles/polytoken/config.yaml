@@ -1,6 +1,6 @@
 defaults:
-  full: codex/gpt-5.5
-  mini: codex/gpt-5.4-mini
+  full: codex/gpt-5.6-sol
+  mini: codex/gpt-5.6-luna
 
 providers:
   codex:
