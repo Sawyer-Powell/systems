@@ -23,6 +23,7 @@
       "firefox"
       "ghostty"
       "gimp"
+      "prismlauncher"
       "zed"
     ];
   };
