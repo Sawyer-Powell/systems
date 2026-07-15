@@ -53,11 +53,11 @@
     };
 
     # ── macOS systems ─────────────────────────────────
-    darwinConfigurations.macbook = nix-darwin.lib.darwinSystem {
+    darwinConfigurations.personal-macbook = nix-darwin.lib.darwinSystem {
       system = "aarch64-darwin";
       specialArgs = { inherit inputs; };
       modules = [
-        ./darwin.nix
+        ./hosts/personal-macbook
         home-manager.darwinModules.home-manager
         {
           home-manager.useGlobalPkgs = true;

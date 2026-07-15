@@ -13,6 +13,22 @@ in
   home.username = "sawyer";
   home.homeDirectory = userHome;
 
+  # ── File synchronization ─────────────────────────────
+  # Keep device identities local for initial bootstrap. Devices and additional
+  # folders may be added through the local UI at http://127.0.0.1:8384.
+  services.syncthing = {
+    enable = true;
+    overrideDevices = false;
+    overrideFolders = false;
+    guiAddress = "127.0.0.1:8384";
+
+    settings.folders.shared = {
+      path = "${userHome}/Sync/shared";
+      label = "Shared";
+      type = "sendreceive";
+    };
+  };
+
   # ── Packages shared across Linux/macOS where available ─
   home.packages = with pkgs; [
     zellij
