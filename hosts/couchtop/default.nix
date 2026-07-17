@@ -31,7 +31,37 @@ in
   # RDNA 4 (9070 XT) needs bleeding-edge kernel + early KMS.
   boot.kernelPackages = pkgs.linuxPackages_latest;
   boot.initrd.kernelModules = [ "amdgpu" ];
-  boot.kernelModules = [ "i2c-dev" ]; # DDC/CI for monitor control
+
+  # Bridge the external monitor's DDC/CI brightness control into the standard
+  # Linux backlight interface so Waybar can provide a native slider.
+  boot.extraModulePackages = [ config.boot.kernelPackages.ddcci-driver ];
+  boot.kernelModules = [ "i2c-dev" "ddcci" "ddcci_backlight" ];
+
+  # Linux 6.8+ no longer provides the I2C auto-probing API used by the DDC/CI
+  # driver. Discover actual DDC displays at runtime and attach only their buses;
+  # I2C bus numbers are assigned dynamically and must not be hard-coded.
+  systemd.services.ddcci-attach = {
+    description = "Attach DDC/CI monitors to the Linux backlight interface";
+    wantedBy = [ "graphical.target" ];
+    before = [ "display-manager.service" ];
+    after = [ "systemd-modules-load.service" "systemd-udev-settle.service" ];
+    wants = [ "systemd-udev-settle.service" ];
+    path = [ pkgs.ddcutil pkgs.coreutils pkgs.gawk ];
+    script = ''
+      set -eu
+
+      ddcutil detect --brief 2>/dev/null \
+        | awk '/I2C bus:/ { sub("^/dev/", "", $3); print $3 }' \
+        | while read -r bus; do
+            [ -n "$bus" ] || continue
+            bus_number="''${bus#i2c-}"
+            if [ ! -e "/sys/bus/i2c/devices/$bus_number-0037" ]; then
+              echo "ddcci 0x37" > "/sys/bus/i2c/devices/$bus/new_device"
+            fi
+          done
+    '';
+    serviceConfig.Type = "oneshot";
+  };
 
   # Quiet boot — straight into Steam, no text wall.
   boot.kernelParams = [ "quiet" "splash" ];
@@ -48,10 +78,15 @@ in
     "vm.compaction_proactiveness" = 0;
   };
 
-  # Mullvad VPN daemon. Keep the Mullvad client package available, but do not
-  # start the system daemon automatically at boot/login while the niri/Steam
-  # session behavior is being stabilized.
-  services.mullvad-vpn.enable = false;
+  # Mullvad VPN daemon. The CLI and GUI require this system service.
+  services.mullvad-vpn.enable = true;
+
+  # Tailscale mesh VPN. Authentication remains an explicit one-time
+  # `sudo tailscale up` so no reusable auth key is stored in this repository.
+  services.tailscale = {
+    enable = true;
+    openFirewall = true;
+  };
 
   # ── Media server (Jellyfin) ─────────────────────────
   services.jellyfin = {
@@ -62,6 +97,10 @@ in
 
   users.groups.media = {};
   users.users.jellyfin.extraGroups = [ "media" "render" "video" ];
+
+  # Desktop file-management support: trash/network locations and removable drives.
+  services.gvfs.enable = true;
+  services.udisks2.enable = true;
 
   # ── System packages ────────────────────────────────
   environment.systemPackages = with pkgs; [
@@ -77,8 +116,10 @@ in
     nodejs_22
     pnpm
     ddcutil          # monitor brightness via DDC/CI
-    playerctl        # MPRIS media keys: play/pause/next/previous
-    blueman          # Bluetooth GUI/manager
+    nautilus          # graphical file manager
+    fooyin            # local music library player with MPRIS support
+    playerctl         # MPRIS media keys: play/pause/next/previous
+    blueman           # Bluetooth GUI/manager
     bibata-cursors   # Shared cursor theme for SDDM and Niri
     sddmBigSurTheme  # SDDM greeter theme
 
@@ -89,6 +130,11 @@ in
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.brightness
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.eden
   ];
+
+  # Waybar uses Nerd Font symbols for its compact status controls. Keep the
+  # text and icon families Nix-managed so icon rendering does not depend on a
+  # manually installed user font.
+  fonts.packages = [ pkgs.nerd-fonts.jetbrains-mono ];
 
   # ── Niri Wayland compositor ────────────────────────
   programs.niri.enable = true;

@@ -78,6 +78,8 @@ binds {
 
     XF86MonBrightnessUp allow-when-locked=true { spawn "@monitorBrightness@" "up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "@monitorBrightness@" "down"; }
+    Page_Up hotkey-overlay-title="Increase Monitor Brightness" { spawn "@monitorBrightness@" "up"; }
+    Page_Down hotkey-overlay-title="Decrease Monitor Brightness" { spawn "@monitorBrightness@" "down"; }
 
     Mod+Q { close-window; }
     Mod+Shift+E { quit; }

@@ -1,0 +1,12 @@
+[package]
+name = "syncthing-store-tools"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "syncthing-store-bootstrap"
+path = "src/bootstrap.rs"
+
+[[bin]]
+name = "syncthing-store-secrets"
+path = "src/secrets.rs"

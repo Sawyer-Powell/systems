@@ -5,3 +5,8 @@
 # Nix build outputs
 result
 result-*
+
+# Runtime secrets rendered from 1Password templates
+infra/syncthing-store/*.rendered
+infra/syncthing-store/restic.env
+infra/syncthing-store/restic-password

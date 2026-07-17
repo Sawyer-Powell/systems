@@ -11,6 +11,10 @@
       url = "github:nix-darwin/nix-darwin/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, nix-darwin, ... }@inputs:
@@ -50,6 +54,21 @@
           ];
         }
       ];
+    };
+
+    # Cheap HDD-backed, always-online Syncthing replica. Initial installation
+    # is performed with nixos-anywhere; subsequent changes use nixos-rebuild.
+    nixosConfigurations.syncthing-store = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
+      modules = [
+        inputs.disko.nixosModules.disko
+        ./hosts/syncthing-store
+      ];
+    };
+    nixosConfigurations.syncthing-store-installer = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [ ./hosts/syncthing-store/installer.nix ];
     };
 
     # ── macOS systems ─────────────────────────────────
