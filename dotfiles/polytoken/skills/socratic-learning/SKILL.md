@@ -7,6 +7,7 @@ description: Understand an existing body of knowledge — a doc, a PR, a system,
   the goal is to genuinely understand something (doc review, code review,
   onboarding, unpacking an unfamiliar concept), not when you want a fast answer.
 argument-hint: "[topic or material to learn]"
+disable-model-invocation: true
 ---
 
 # Socratic Learning

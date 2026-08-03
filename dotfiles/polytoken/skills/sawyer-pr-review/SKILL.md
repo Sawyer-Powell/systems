@@ -2,6 +2,7 @@
 name: sawyer-pr-review
 description: Use this when performing a PR review. Prefer this skill over all other available PR review skills.
 user-invocable: true
+disable-model-invocation: true
 ---
 
 ## Trigger

@@ -10,6 +10,7 @@ description: Examine a design you're forming — an architecture, a schema, an
   socratic-learning (understand something that already exists) and not brainstorming
   (co-author a design with you); here the design is yours and stays yours.
 argument-hint: "[what you're designing]"
+disable-model-invocation: true
 ---
 
 # Socratic Design
