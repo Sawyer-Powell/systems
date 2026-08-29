@@ -45,6 +45,7 @@ in
     uv
     neovim
     tree-sitter
+    opencode
 
     # Rust development: a Nix-pinned stable toolchain and fast, project-local
     # workflows. Keep this here (rather than rustup) so every Home Manager host
@@ -185,8 +186,8 @@ in
     force = true;
   };
 
-  xdg.configFile."polytoken/skills" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/polytoken/skills";
+  home.file.".agents/skills" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/agents/skills";
     force = true;
   };
 
@@ -202,6 +203,21 @@ in
 
   xdg.configFile."ghostty" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/ghostty";
+    force = true;
+  };
+
+  xdg.configFile."opencode/tui.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/tui.json";
+    force = true;
+  };
+
+  xdg.configFile."opencode/AGENTS.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/AGENTS.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/themes/gruvbox-dark-hard.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/themes/gruvbox-dark-hard.json";
     force = true;
   };
 
