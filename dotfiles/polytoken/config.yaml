@@ -1,5 +1,5 @@
 defaults:
-  full: codex/gpt-5.6-sol
+  full: codex/gpt-5.6-terra(medium)
   mini: codex/gpt-5.6-luna
 
 providers:
