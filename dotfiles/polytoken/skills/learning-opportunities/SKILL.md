@@ -1,5 +1,7 @@
 ---
+name: learning-opportunities
 description: Deliberate skill-development exercises for AI-assisted coding, adapted from Dr. Cat Hicks' Learning Opportunities skill. Uses project-grounded prediction, generation, retrieval, trace, debug, and teach-back exercises.
+disable-model-invocation: true
 polytoken:
   tags:
     - learning

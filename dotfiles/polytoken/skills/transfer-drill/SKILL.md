@@ -1,5 +1,7 @@
 ---
+name: transfer-drill
 description: Create small near-transfer practice tasks after learning, debugging, review, or design work so the user proves they can apply the concept with less help.
+disable-model-invocation: true
 polytoken:
   tags:
     - learning

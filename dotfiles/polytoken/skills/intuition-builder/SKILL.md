@@ -1,5 +1,7 @@
 ---
+name: intuition-builder
 description: Build durable intuition for unfamiliar technical subjects using prior-model elicitation, prediction, minimal worked examples, multiple representations, self-explanation, retrieval, and near transfer.
+disable-model-invocation: true
 polytoken:
   tags:
     - learning

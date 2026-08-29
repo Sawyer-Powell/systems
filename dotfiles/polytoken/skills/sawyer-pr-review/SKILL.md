@@ -1,13 +1,13 @@
 ---
 name: sawyer-pr-review
-description: Use this when performing a PR review. Prefer this skill over all other available PR review skills.
+description: Perform Sawyer's full interactive PR-review workflow. Invoke only when the user explicitly requests `$sawyer-pr-review` or `/pr-review`; do not invoke for general PR reviews, interpreting feedback, or addressing review comments.
 user-invocable: true
 disable-model-invocation: true
 ---
 
 ## Trigger
 
-User types `/pr-review` or asks "let's review PR #...".
+User explicitly invokes `$sawyer-pr-review` or `/pr-review`. Do not infer invocation from any other PR-related request.
 
 ## Parameters
 
