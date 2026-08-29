@@ -2,3 +2,18 @@ theme = gruvbox-material-dark-hard
 
 # Map Cmd+L → send ESC+c (which zellij reads as Alt+c → toggle floats)
 keybind = cmd+l=text:\x1bc
+
+# Splits and pane navigation
+keybind = alt+/=new_split:right
+keybind = alt+.=new_split:down
+keybind = alt+h=goto_split:left
+keybind = alt+j=goto_split:down
+keybind = alt+k=goto_split:up
+keybind = alt+l=goto_split:right
+
+# Tabs and pane zoom
+keybind = alt+r=prompt_tab_title
+keybind = alt+shift+h=previous_tab
+keybind = alt+shift+l=next_tab
+keybind = alt+t=new_tab
+keybind = alt+;=toggle_split_zoom

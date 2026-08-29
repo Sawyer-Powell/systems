@@ -42,6 +42,7 @@ in
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.mont
     jjui
     jujutsu
+    tuicr
     uv
     neovim
     tree-sitter
