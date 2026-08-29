@@ -1,15 +1,15 @@
 { pkgs }:
 
 let
-  version = "0.6.10";
+  version = "0.8.1";
   srcs = {
     x86_64-linux = {
       url = "https://dl.polytoken.dev/${version}/linux-amd64/polytoken.zip";
-      hash = "sha256-kvSDJmz8Klpozznlb6dPgVFXe8LD3PR48ULoZwZQ8YM=";
+      hash = "sha256-sbCcGOHqOhf24j/ZJg28Ld/dQHzStVLyuNhfMPfSDFw=";
     };
     aarch64-linux = {
       url = "https://dl.polytoken.dev/${version}/linux-arm64/polytoken.zip";
-      hash = "sha256-vFszRZKz1R6iL4CkPuIcnUTYiYsoLzkGDZFy1OQslJA=";
+      hash = "sha256-You9uswFEVxzwN/Bzz7yWhx5wQ29He/NGwHnkTWVR3A=";
     };
   };
   src = srcs.${pkgs.stdenv.hostPlatform.system} or (throw "polytoken: unsupported system ${pkgs.stdenv.hostPlatform.system}");
