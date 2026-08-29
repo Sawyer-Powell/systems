@@ -39,6 +39,7 @@ in
     gh
     git
     _1password-cli
+    inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.mont
     jjui
     jujutsu
     uv
@@ -96,6 +97,11 @@ in
     settings = {
       user.name = "Sawyer Powell";
       user.email = "sawyerhpowell@gmail.com";
+
+      # Use the shared 1Password SSH agent for GitHub transport as well as
+      # commit signing. Authenticate `gh` locally with SSH; its OAuth token is
+      # stored by the GitHub CLI, never in this Nix configuration.
+      url."git@github.com:".insteadOf = "https://github.com/";
 
       gpg.format = "ssh";
       gpg.ssh.program = if pkgs.stdenv.isDarwin then

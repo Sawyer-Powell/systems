@@ -13,7 +13,25 @@ in
     let
       pkgs = pkgsFor system;
     in
-    lib.optionalAttrs (builtins.elem system [ "x86_64-linux" "aarch64-linux" ]) {
+    {
+      # Build the pinned mont release from source for every managed platform.
+      mont =
+        let
+          src = pkgs.fetchFromGitHub {
+            owner = "Sawyer-Powell";
+            repo = "mont";
+            rev = "226fb177201210ec86a5724ef90aec0c4046c49d";
+            hash = "sha256-T9yuySfbD9U6y2ddvr8GCP3RUGfGYVmGI8pcEkUnwSM=";
+          };
+        in
+        pkgs.rustPlatform.buildRustPackage {
+          pname = "mont";
+          version = "0.3.1";
+          inherit src;
+          cargoLock.lockFile = "${src}/Cargo.lock";
+        };
+    }
+    // lib.optionalAttrs (builtins.elem system [ "x86_64-linux" "aarch64-linux" ]) {
       polytoken = import ./custom_packages/polytoken.nix { inherit pkgs; };
     }
     // lib.optionalAttrs (system == "x86_64-linux") {
