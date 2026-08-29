@@ -46,6 +46,27 @@ in
     neovim
     tree-sitter
 
+    # Rust development: a Nix-pinned stable toolchain and fast, project-local
+    # workflows. Keep this here (rather than rustup) so every Home Manager host
+    # receives compatible compiler, language-server, and editor tooling.
+    cargo
+    rustc
+    rustfmt
+    clippy
+    rust-analyzer
+    basedpyright
+    gopls
+    cargo-nextest
+    bacon
+    cargo-watch
+    cargo-edit
+    cargo-expand
+    cargo-audit
+    cargo-deny
+    cargo-outdated
+    cargo-machete
+    cargo-insta
+
     # Generic native build tooling for editor plugins and local development.
     gcc
     gnumake

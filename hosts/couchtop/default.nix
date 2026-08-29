@@ -108,10 +108,6 @@ in
     ripgrep
     gh
     python314
-    cargo
-    rustc
-    rustfmt
-    clippy
     (pkgs.mpv.override { youtubeSupport = false; })
     nodejs_22
     pnpm
