@@ -69,7 +69,6 @@ in
     cargo-insta
 
     # Generic native build tooling for editor plugins and local development.
-    gcc
     gnumake
     pkg-config
     cmake
@@ -81,6 +80,7 @@ in
   ] ++ lib.optionals (isPersonal && pkgs.stdenv.isDarwin) [
     opSshSignDarwin
   ] ++ lib.optionals pkgs.stdenv.isLinux [
+    gcc
     gimp
     firefox
     _1password-gui
@@ -161,6 +161,8 @@ in
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
       source "$HOME/.config/shell/secrets.sh"
     '' + ''
+      export EDITOR=nvim
+      export VISUAL=nvim
       export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
       alias vim=nvim
       alias vi=nvim
@@ -176,6 +178,8 @@ in
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
       source "$HOME/.config/shell/secrets.sh"
     '' + ''
+      export EDITOR=nvim
+      export VISUAL=nvim
       export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
       alias vim=nvim
       alias vi=nvim
@@ -242,6 +246,21 @@ in
 
   xdg.configFile."opencode/agents/mont.md" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/agents/linear-task-worker.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear-task-worker.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/agents/linear-task-verifier.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear-task-verifier.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/agents/linear.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear.md";
     force = true;
   };
 
