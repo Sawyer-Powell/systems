@@ -1,4 +1,0 @@
-interface:
-  display_name: "Automated PR Responses"
-  short_description: "Draft provenance-aware PR replies"
-  default_prompt: "Use $automated-pr-responses to classify these review comments, draft replies, and ask before posting."

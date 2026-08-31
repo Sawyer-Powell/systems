@@ -1,4 +1,0 @@
-interface:
-  display_name: "GH Stack"
-  short_description: "Manage GitHub stacked pull requests"
-  default_prompt: "Use $gh-stack to create or manage this pull request stack."

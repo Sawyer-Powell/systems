@@ -200,7 +200,7 @@ in
   };
 
   home.file.".agents/skills" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/agents/skills";
+    source = inputs.agents + "/skills";
     force = true;
   };
 
@@ -234,33 +234,8 @@ in
     force = true;
   };
 
-  xdg.configFile."opencode/agents/mont-task-worker.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont-task-worker.md";
-    force = true;
-  };
-
-  xdg.configFile."opencode/agents/mont-task-verifier.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont-task-verifier.md";
-    force = true;
-  };
-
-  xdg.configFile."opencode/agents/mont.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont.md";
-    force = true;
-  };
-
-  xdg.configFile."opencode/agents/linear-task-worker.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear-task-worker.md";
-    force = true;
-  };
-
-  xdg.configFile."opencode/agents/linear-task-verifier.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear-task-verifier.md";
-    force = true;
-  };
-
-  xdg.configFile."opencode/agents/linear.md" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/linear.md";
+  xdg.configFile."opencode/agents" = {
+    source = inputs.agents + "/adapters/opencode/agents";
     force = true;
   };
 

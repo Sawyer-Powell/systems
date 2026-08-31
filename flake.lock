@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "agents": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788217002,
+        "narHash": "sha256-J95IexctPNAZqQq/biommYtgmvyabIFOyM/HhZ1iz54=",
+        "ref": "refs/heads/main",
+        "rev": "e81bc4e528eb9dd8c8b5318fa818af5673d960c1",
+        "revCount": 6,
+        "type": "git",
+        "url": "ssh://git@github.com/Sawyer-Powell/agents.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/Sawyer-Powell/agents.git"
+      }
+    },
     "disko": {
       "inputs": {
         "nixpkgs": [
@@ -79,6 +95,7 @@
     },
     "root": {
       "inputs": {
+        "agents": "agents",
         "disko": "disko",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",

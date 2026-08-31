@@ -1,4 +1,0 @@
-interface:
-  display_name: "Preferred Python Style"
-  short_description: "Apply Sawyer’s preferred Python conventions"
-  default_prompt: "Use $preferred-python-style when writing or revising this Python code and its tests."

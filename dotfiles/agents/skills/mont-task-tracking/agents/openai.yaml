@@ -1,4 +1,0 @@
-interface:
-  display_name: "Mont Task Tracking"
-  short_description: "Track work with mont tasks, jots, and gates"
-  default_prompt: "Use $mont-task-tracking to set up or update this repository task graph."

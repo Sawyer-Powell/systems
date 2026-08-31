@@ -15,6 +15,10 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    agents = {
+      url = "git+ssh://git@github.com/Sawyer-Powell/agents.git";
+      flake = false;
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, nix-darwin, ... }@inputs:
