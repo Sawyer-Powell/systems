@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, userHome, dotfilesDir, ... }:
+{ config, pkgs, lib, inputs, username, userHome, dotfilesDir, isPersonal, ... }:
 
 let
   opSshSignDarwin = pkgs.writeShellScriptBin "op-ssh-sign" ''
@@ -6,17 +6,17 @@ let
   '';
 in
 {
-  imports = [
+  imports = lib.optionals isPersonal [
     ./secrets.nix
   ];
 
-  home.username = "sawyer";
+  home.username = username;
   home.homeDirectory = userHome;
 
   # ── File synchronization ─────────────────────────────
   # Keep device identities local for initial bootstrap. Devices and additional
   # folders may be added through the local UI at http://127.0.0.1:8384.
-  services.syncthing = {
+  services.syncthing = lib.mkIf isPersonal {
     enable = true;
     overrideDevices = false;
     overrideFolders = false;
@@ -38,7 +38,6 @@ in
     jq
     gh
     git
-    _1password-cli
     inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.mont
     jjui
     jujutsu
@@ -77,7 +76,9 @@ in
     ninja
 
     zsh
-  ] ++ lib.optionals pkgs.stdenv.isDarwin [
+  ] ++ lib.optionals isPersonal [
+    _1password-cli
+  ] ++ lib.optionals (isPersonal && pkgs.stdenv.isDarwin) [
     opSshSignDarwin
   ] ++ lib.optionals pkgs.stdenv.isLinux [
     gimp
@@ -92,13 +93,15 @@ in
   home.sessionVariables = {
     EDITOR = "nvim";
     VISUAL = "nvim";
+    OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = "true";
+  } // lib.optionalAttrs isPersonal {
     SSH_AUTH_SOCK = if pkgs.stdenv.isDarwin then
       "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
     else
       "$HOME/.1password/agent.sock";
   };
 
-  programs.ssh = {
+  programs.ssh = lib.mkIf isPersonal {
     enable = true;
     enableDefaultConfig = false;
     settings."*".IdentityAgent = if pkgs.stdenv.isDarwin then
@@ -109,15 +112,21 @@ in
 
   # Let the 1Password SSH agent offer keys from the Personal vault. The private
   # keys themselves stay in 1Password, not in this repository or ~/.ssh.
-  xdg.configFile."1Password/ssh/agent.toml".text = ''
-    [[ssh-keys]]
-    vault = "Personal"
-  '';
+  xdg.configFile."1Password/ssh/agent.toml" = lib.mkIf isPersonal {
+    text = ''
+      [[ssh-keys]]
+      vault = "Personal"
+    '';
+  };
 
   # ── Git ─────────────────────────────────────────────
   programs.git = {
     enable = true;
     settings = {
+      init.defaultBranch = "main";
+      pull.rebase = true;
+      push.autoSetupRemote = true;
+    } // lib.optionalAttrs isPersonal {
       user.name = "Sawyer Powell";
       user.email = "sawyerhpowell@gmail.com";
 
@@ -134,15 +143,12 @@ in
       user.signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1AbbXZzfx3O4xtwBzMSGetMEy9AfLRHwdN339qE2gq id_ed25519";
       commit.gpgsign = true;
       tag.gpgsign = true;
-
-      init.defaultBranch = "main";
-      pull.rebase = true;
-      push.autoSetupRemote = true;
     };
   };
 
-  # ── Jujutsu ─────────────────────────────────────────
-  xdg.configFile."jj/config.toml" = {
+  # The checked-in Jujutsu config contains personal identity and signing
+  # settings, so work machines intentionally leave jj configuration unmanaged.
+  xdg.configFile."jj/config.toml" = lib.mkIf isPersonal {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/jj/config.toml";
     force = true;
   };
@@ -150,29 +156,29 @@ in
   # ── Shells ──────────────────────────────────────────
   programs.bash = {
     enable = true;
-    initExtra = ''
-      # 1Password owns SSH keys and Git SSH signing.
+    initExtra = lib.optionalString isPersonal ''
+      # 1Password owns SSH keys and Git SSH signing on personal machines.
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
-
+      source "$HOME/.config/shell/secrets.sh"
+    '' + ''
       alias vim=nvim
       alias vi=nvim
       alias poly="polytoken"
       alias ask="polytoken exec"
-      source "$HOME/.config/shell/secrets.sh"
     '';
   };
 
   home.file.".zshrc" = {
     force = true;
-    text = ''
-      # 1Password owns SSH keys and Git SSH signing.
+    text = lib.optionalString isPersonal ''
+      # 1Password owns SSH keys and Git SSH signing on personal machines.
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
-
+      source "$HOME/.config/shell/secrets.sh"
+    '' + ''
       alias vim=nvim
       alias vi=nvim
       alias poly="polytoken"
       alias ask="polytoken exec"
-      source "$HOME/.config/shell/secrets.sh"
     '';
   };
 

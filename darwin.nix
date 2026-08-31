@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, username, userHome, ... }:
 
 {
   nixpkgs.config.allowUnfree = true;
@@ -9,22 +9,9 @@
   nix.enable = false;
 
   system.stateVersion = 7;
-  system.primaryUser = "sawyer";
+  system.primaryUser = username;
 
-  users.users.sawyer.home = "/Users/sawyer";
+  users.users.${username}.home = userHome;
 
-  # The 1Password GUI app is typically installed as a Homebrew cask on macOS,
-  # while the CLI remains managed by Home Manager/nixpkgs.
-  homebrew = {
-    enable = true;
-    casks = [
-      "1password"
-      "docker-desktop"
-      "firefox"
-      "ghostty"
-      "gimp"
-      "prismlauncher"
-      "zed"
-    ];
-  };
+  homebrew.enable = true;
 }

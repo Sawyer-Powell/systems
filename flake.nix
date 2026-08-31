@@ -45,8 +45,10 @@
           home-manager.backupFileExtension = "hm-backup";
           home-manager.extraSpecialArgs = {
             inherit inputs;
+            username = "sawyer";
             userHome = "/home/sawyer";
             dotfilesDir = "/home/sawyer/nixos-config/dotfiles";
+            isPersonal = true;
           };
           home-manager.users.sawyer.imports = [
             ./home/sawyer
@@ -74,7 +76,11 @@
     # ── macOS systems ─────────────────────────────────
     darwinConfigurations.personal-macbook = nix-darwin.lib.darwinSystem {
       system = "aarch64-darwin";
-      specialArgs = { inherit inputs; };
+      specialArgs = {
+        inherit inputs;
+        username = "sawyer";
+        userHome = "/Users/sawyer";
+      };
       modules = [
         ./hosts/personal-macbook
         home-manager.darwinModules.home-manager
@@ -84,10 +90,47 @@
           home-manager.backupFileExtension = "hm-backup";
           home-manager.extraSpecialArgs = {
             inherit inputs;
+            username = "sawyer";
             userHome = "/Users/sawyer";
             dotfilesDir = "/Users/sawyer/repos/systems/dotfiles";
+            systemsDir = "/Users/sawyer/repos/systems";
+            systemConfigName = "personal-macbook";
+            isPersonal = true;
           };
           home-manager.users.sawyer.imports = [
+            ./home/sawyer
+            ./home/sawyer/darwin.nix
+          ];
+        }
+      ];
+    };
+
+    # A deliberately minimal work profile: shared development tools and
+    # dotfiles, without personal identity, signing, secrets, or synchronization.
+    darwinConfigurations.work-macbook = nix-darwin.lib.darwinSystem {
+      system = "aarch64-darwin";
+      specialArgs = {
+        inherit inputs;
+        username = "sawyerpowell";
+        userHome = "/Users/sawyerpowell";
+      };
+      modules = [
+        ./hosts/work-macbook
+        home-manager.darwinModules.home-manager
+        {
+          home-manager.useGlobalPkgs = true;
+          home-manager.useUserPackages = true;
+          home-manager.backupFileExtension = "hm-backup";
+          home-manager.extraSpecialArgs = {
+            inherit inputs;
+            username = "sawyerpowell";
+            userHome = "/Users/sawyerpowell";
+            dotfilesDir = "/Users/sawyerpowell/repos/systems/dotfiles";
+            systemsDir = "/Users/sawyerpowell/repos/systems";
+            systemConfigName = "work-macbook";
+            isPersonal = false;
+          };
+          home-manager.users.sawyerpowell.imports = [
             ./home/sawyer
             ./home/sawyer/darwin.nix
           ];

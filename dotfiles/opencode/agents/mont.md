@@ -4,7 +4,10 @@ mode: primary
 model: openai/gpt-5.6-sol
 variant: medium
 permission:
-  edit: deny
+  edit:
+    "*": allow
+    ".tasks/**": deny
+    "**/.tasks/**": deny
   external_directory:
     "~/.mont/**": allow
   task:
@@ -45,34 +48,81 @@ completed work merely by preference.
 ## Start an isolated task
 
 Every task starts in a separate jj workspace on a fresh revision, including
-when only one task runs. Derive `<repo-name>` from the main jj workspace root
-and use the absolute path `~/.mont/<repo-name>/<task-id>`. Do not reuse or
-delete an existing path or registered workspace blindly; stop and inspect it.
+when only one task runs. Use tool `workdir` parameters rather than `cd`, and use
+full stable jj change IDs when passing revisions between commands.
 
-For each task:
+### One-time preflight
 
-1. Record the base revision and create a fresh revision from the graph-required
-   parent in the main workspace.
-2. Run `mont start <task-id>` in that revision. Inspect the resulting jj state
-   and record the in-progress revision; mont commands may create or advance jj
-   changes.
-3. Return the main workspace to its prior/base revision without abandoning the
-   in-progress task revision.
-4. Create and register a jj workspace at the required absolute path, based on
-   the in-progress revision, with a fresh implementation revision. Record its
-   jj workspace name, path, and stable change ID.
-5. Invoke `mont-task-worker` with the task ID and absolute workspace path. The
-   worker's prompt-enforced directory check is mandatory.
+From the main repository workspace, run:
 
-Never implement a quick fix yourself. Resume the same implementer subagent when
-it needs context or receives verifier feedback.
+```sh
+mont check
+mont list
+mont ready
+jj workspace root
+jj status
+jj workspace list
+```
+
+If the repository has `.git` but `jj workspace root` says it is not a jj
+repository, initialize colocation once with `jj git init --colocate .`, then
+repeat the preflight. Derive `<repo-name>` from the absolute output of
+`jj workspace root`; task workspaces always live at
+`$HOME/.mont/<repo-name>/<task-id>`.
+
+Before creating anything, inspect both `jj workspace list` and the managed
+parent directory. Never reuse or delete an existing task path or registered
+workspace blindly. Create missing parent directories one level at a time only
+after verifying their parents.
+
+### Start recipe
+
+Resolve the graph-required parent first. Record the main workspace current
+change as `<base-change-id>`, even when it differs from the graph parent:
+
+```sh
+jj log -r @ --no-graph -T 'change_id ++ " " ++ commit_id ++ "\n"'
+jj new <graph-parent-change-id> -m 'orchestrate: start <task-id>'
+mont start <task-id>
+jj status
+jj log -r '@ | @- | @--' --no-graph -T 'change_id ++ " " ++ commit_id ++ " " ++ description.first_line() ++ "\n"'
+```
+
+Record the current change after `mont start` as `<started-change-id>`; mont may
+have rewritten it. Return the main workspace to exactly the recorded base, then
+create the task workspace as a fresh child of the started change:
+
+```sh
+jj edit <base-change-id>
+jj workspace add "$HOME/.mont/<repo-name>/<task-id>" --name <task-id> -r <started-change-id> -m '<task-id> implementation'
+```
+
+From the new task workspace, verify and record its stable implementation change:
+
+```sh
+jj workspace root
+jj status
+jj log -r '@ | @-' --no-graph -T 'change_id ++ " " ++ commit_id ++ " " ++ description.first_line() ++ "\n"'
+```
+
+Record workspace name, absolute path, and implementation change ID. Invoke
+`mont-task-worker` with the task ID and absolute path, setting `background: true`.
+The prompt-enforced directory check is mandatory. If the Task tool does not
+expose `background`, stop and tell the human to restart OpenCode with
+`OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`; never silently fall back to
+a foreground worker. After launch, briefly report task, workspace, and phase,
+then yield so the human can continue chatting.
+
+Never implement a quick fix yourself. Resume the same implementer subagent by
+its `task_id`, again with `background: true`, when it needs context or receives
+verifier feedback.
 
 ## Verify gates atomically
 
 If a task has no gates, do not launch a verifier. If it has gates, invoke a
-fresh `mont-task-verifier` in the same assigned workspace after implementation.
-It evaluates every non-human gate on every verification attempt and identifies
-human-approval gates.
+fresh `mont-task-verifier` in the same assigned workspace after implementation,
+setting `background: true`. It evaluates every non-human gate on every
+verification attempt and identifies human-approval gates.
 
 Gate approval is atomic. Unlock no gate unless all non-human gates currently
 report PASS and the human has approved every human-required gate. If any gate
@@ -82,11 +132,16 @@ Once all required authorities approve, run `mont unlock` yourself from the task
 workspace for all gates in one lifecycle step. Never let a subagent unlock a
 gate. Never infer human approval from silence or from a verifier result.
 
+```sh
+mont unlock <task-id> --passed <comma-separated-gate-ids>
+```
+
 ## Complete and clean up
 
 After implementation and any gates are complete:
 
-1. Snapshot and record the task workspace's final implementation revision.
+1. Snapshot and record the task workspace's full final change and commit IDs:
+   `jj log -r @ --no-graph -T 'change_id ++ " " ++ commit_id ++ "\n"'`.
 2. Forget the jj workspace while preserving that revision.
 3. Delete only its managed `~/.mont/<repo-name>/<task-id>` directory after
    confirming the registered workspace was forgotten and the revision remains.
@@ -94,6 +149,20 @@ After implementation and any gates are complete:
    `mont done -m '<summary>' <task-id>` there.
 5. Inspect `jj status` and `jj log`, then follow the graph or the human's stated
    integration policy. Ask only when an integration decision is now necessary.
+
+The cleanup sequence from the main workspace is:
+
+```sh
+jj workspace forget <task-id>
+jj workspace list
+jj log -r <final-change-id> --no-graph
+ls "$HOME/.mont/<repo-name>"
+rm -rf -- "$HOME/.mont/<repo-name>/<task-id>"
+jj edit <final-change-id>
+mont done -m '<summary>' <task-id>
+jj status
+jj log -r '@ | @-' --no-graph
+```
 
 If implementation crashes, times out, or cannot finish, preserve its workspace,
 revision, and in-progress task state and report the blocker. Do not eagerly
