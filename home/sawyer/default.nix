@@ -227,6 +227,16 @@ in
     force = true;
   };
 
+  xdg.configFile."opencode/agents/mont-task-verifier.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont-task-verifier.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/agents/mont.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont.md";
+    force = true;
+  };
+
   xdg.configFile."opencode/themes/gruvbox-dark-hard.json" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/themes/gruvbox-dark-hard.json";
     force = true;
