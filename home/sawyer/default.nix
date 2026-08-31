@@ -212,8 +212,18 @@ in
     force = true;
   };
 
+  xdg.configFile."opencode/opencode.jsonc" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/opencode.jsonc";
+    force = true;
+  };
+
   xdg.configFile."opencode/AGENTS.md" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/AGENTS.md";
+    force = true;
+  };
+
+  xdg.configFile."opencode/agents/mont-task-worker.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/agents/mont-task-worker.md";
     force = true;
   };
 
