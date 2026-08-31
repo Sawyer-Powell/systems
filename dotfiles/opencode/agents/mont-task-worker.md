@@ -1,6 +1,6 @@
 ---
 description: Implements an already-started mont task without changing its task record or lifecycle state.
-mode: subagent
+mode: all
 permission:
   task: deny
   edit:

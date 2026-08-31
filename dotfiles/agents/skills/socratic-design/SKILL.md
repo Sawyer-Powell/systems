@@ -100,10 +100,15 @@ feeling.
    on, and the checkpoint that catches a misread before it poisons every question
    downstream (your read is a hypothesis, not the truth). No opinions, no forks, no
    "but what about" yet. Close this only when the human confirms you've got it.
-3. **Examine (the Socratic loop).** Now the real dialogue begins. Working from the
-   shared understanding, dig: ask the questions that surface what the human hasn't
-   considered — one at a time. See the rules below. Continue until the human judges
-   the design settled — you may not declare it done yourself.
+3. **Examine (the Socratic loop).** Before the real dialogue begins, work from the
+   shared understanding to give a short, ordered outline of the key areas or
+   flows you want the human to further define. This is a preview, not critique: name
+   what the examination will cover without beginning it or revealing conclusions.
+   Explicitly ask whether they want to adjust the outline and whether they are ready
+   to proceed, then stop. Do not begin questioning until they say go. Once they do,
+   use the outline as the backbone and ask the questions that surface what the human
+   hasn't considered — one at a time. See the rules below. Continue until the human
+   judges the design settled — you may not declare it done yourself.
 4. **Capture.** When the design settles, capture it — the decisions AND their
    rationale (what was chosen, what was rejected, why, what tradeoff was accepted).
    This is the deliverable, so write it down (design doc / decision record). Then

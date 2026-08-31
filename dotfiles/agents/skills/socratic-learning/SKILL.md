@@ -43,13 +43,14 @@ against it, so "done" means coverage rather than a feeling.
    it isn't.
 2. **Learn (silent), then signal readiness.** Synthesize what you sourced into a
    structured understanding for yourself; decide the one most load-bearing idea to
-   open on. Do not dump the synthesis. Then post one short message: in one or two
-   sentences name the topic and scope only — not the findings or contents — and
-   **lead with a question asking whether the human wants to begin.** Stop there. Do
-   not start questioning until they say go.
+   open on. Do not dump the synthesis. Then post one short message with an ordered
+   outline of the key points or flows the session will cover — not the findings or
+   answers. Explicitly ask whether the human wants to adjust the outline and whether
+   they are ready to begin. Stop there. Do not start questioning until they say go.
 3. **Question (the loop).** Teach by asking; see the rules below. Continue until
-   the human signals they feel they understand. You may not end the loop on your
-   own judgment — never declare "looks like you've got it" and wrap up.
+   the human signals they feel they understand, using the agreed outline as the
+   backbone. You may not end the loop on your own judgment — never declare "looks
+   like you've got it" and wrap up.
 4. **Consolidate (teach-back).** When the human signals understanding, don't just
    close — have them describe it back in their own words, at length. **Always lead
    with a pointed, high-level prompt; never a bare "explain everything."** Frame the
