@@ -161,6 +161,7 @@ in
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
       source "$HOME/.config/shell/secrets.sh"
     '' + ''
+      export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
       alias vim=nvim
       alias vi=nvim
       alias poly="polytoken"
@@ -175,6 +176,7 @@ in
       export SSH_AUTH_SOCK="${if pkgs.stdenv.isDarwin then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" else "$HOME/.1password/agent.sock"}"
       source "$HOME/.config/shell/secrets.sh"
     '' + ''
+      export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
       alias vim=nvim
       alias vi=nvim
       alias poly="polytoken"
