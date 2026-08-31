@@ -57,6 +57,8 @@ in
     rust-analyzer
     basedpyright
     gopls
+    clang-tools
+    typescript-language-server
     cargo-nextest
     bacon
     cargo-watch
@@ -199,6 +201,11 @@ in
     force = true;
   };
 
+  xdg.configFile."eca/config.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/eca/config.json";
+    force = true;
+  };
+
   home.file.".agents/skills" = {
     source = inputs.agents + "/skills";
     force = true;
@@ -206,6 +213,16 @@ in
 
   xdg.configFile."nvim" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/nvim";
+    force = true;
+  };
+
+  home.file.".emacs.d/init.el" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/emacs/init.el";
+    force = true;
+  };
+
+  home.file.".emacs.d/logo.png" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/emacs/logo.png";
     force = true;
   };
 

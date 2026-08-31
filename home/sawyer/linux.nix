@@ -279,6 +279,24 @@ in
     networkmanagerapplet
   ];
 
+  programs.emacs = {
+    enable = true;
+    package = pkgs.emacs31;
+    extraPackages = epkgs: with epkgs; [
+      corfu
+      dashboard
+      doom-themes
+      eca
+      evil
+      evil-collection
+      go-mode
+      ivy
+      magit
+      rust-mode
+      typescript-mode
+    ];
+  };
+
   # A compact GNOME-like shell surface for Niri: workspace navigation, clock,
   # and status controls. Click the brightness icon to reveal its inline slider;
   # hardware keys continue to provide immediate volume/brightness changes

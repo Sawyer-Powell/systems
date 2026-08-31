@@ -12,6 +12,22 @@
   system.primaryUser = username;
 
   users.users.${username}.home = userHome;
-
-  homebrew.enable = true;
+   fonts.packages = [ pkgs.nerd-fonts.jetbrains-mono ];
+ 
+   # The 1Password GUI app is typically installed as a Homebrew cask on macOS,
+   # while the CLI remains managed by Home Manager/nixpkgs.
+   homebrew = {
+     enable = true;
+     taps = [ "d12frosted/emacs-plus" ];
+     casks = [
+       "1password"
+       "docker-desktop"
+       "d12frosted/emacs-plus/emacs-plus-app"
+       "firefox"
+       "ghostty"
+       "gimp"
+       "prismlauncher"
+       "zed"
+     ];
+   };
 }
