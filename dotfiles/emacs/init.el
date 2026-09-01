@@ -152,10 +152,113 @@
 ;; Start an ECA session after Emacs finishes initializing.
 (add-hook 'emacs-startup-hook #'eca)
 
+(defvar sawyer-eca-last-statuses (make-hash-table :test #'eq)
+  "Last observed ECA status for each chat buffer.")
+
+(defvar sawyer-eca-latest-attention-buffer nil
+  "Most recent ECA chat buffer that requested user input.")
+
+(defvar sawyer-eca-latest-finished-buffer nil
+  "Most recent ECA chat buffer whose turn finished.")
+
+(defvar sawyer-eca-finished-unseen nil
+  "Whether the most recently finished ECA turn has not been visited.")
+
+(defun sawyer-eca-attention-pending-p ()
+  "Return non-nil when the latest ECA attention request is unresolved."
+  (and (buffer-live-p sawyer-eca-latest-attention-buffer)
+       (memq (eca-chat-status sawyer-eca-latest-attention-buffer)
+             '(waiting-approval waiting-answer))))
+
+(defun sawyer-eca-track-attention (session)
+  "Track chats in SESSION that begin waiting for user input."
+  (dolist (buffer (eca-chat-buffers session))
+    (let* ((status (eca-chat-status buffer))
+           (previous (gethash buffer sawyer-eca-last-statuses)))
+      (puthash buffer status sawyer-eca-last-statuses)
+      (when (and (memq status '(waiting-approval waiting-answer))
+                 (not (eq status previous)))
+        (setq sawyer-eca-latest-attention-buffer buffer)
+        (message "ECA needs input: %s" (buffer-name buffer)))))
+  (force-mode-line-update t))
+
+(add-hook 'eca-chat-session-status-changed-functions
+          #'sawyer-eca-track-attention)
+
+(defun sawyer-eca-track-finished ()
+  "Track the ECA chat buffer whose turn just finished."
+  (setq sawyer-eca-latest-finished-buffer (current-buffer)
+        sawyer-eca-finished-unseen t)
+  (message "ECA turn finished: %s" (buffer-name))
+  (force-mode-line-update t))
+
+(add-hook 'eca-chat-finished-hook #'sawyer-eca-track-finished)
+
+(defun sawyer-eca-go-to-latest-attention ()
+  "Visit the most recent ECA chat that requested user input."
+  (interactive)
+  (unless (buffer-live-p sawyer-eca-latest-attention-buffer)
+    (user-error "No ECA input request has been recorded"))
+  (pop-to-buffer sawyer-eca-latest-attention-buffer))
+
+(defun sawyer-eca-go-to-latest-finished ()
+  "Visit the most recently completed ECA turn."
+  (interactive)
+  (unless (buffer-live-p sawyer-eca-latest-finished-buffer)
+    (user-error "No completed ECA turn has been recorded"))
+  (setq sawyer-eca-finished-unseen nil)
+  (pop-to-buffer sawyer-eca-latest-finished-buffer)
+  (goto-char (point-max))
+  (force-mode-line-update t))
+
+(defvar-keymap sawyer-eca-attention-mode-line-map
+  :doc "Mode-line keymap for the latest ECA input request."
+  "<mode-line> <mouse-1>" #'sawyer-eca-go-to-latest-attention)
+
+(defvar-keymap sawyer-eca-finished-mode-line-map
+  :doc "Mode-line keymap for the latest finished ECA turn."
+  "<mode-line> <mouse-1>" #'sawyer-eca-go-to-latest-finished)
+
+(defun sawyer-eca-activity-mode-line ()
+  "Return mode-line indicators for recent ECA activity."
+  (concat
+   (when (sawyer-eca-attention-pending-p)
+     (propertize " ECA: INPUT "
+                 'face 'warning
+                 'help-echo "ECA needs input; click to visit"
+                 'mouse-face 'mode-line-highlight
+                 'local-map sawyer-eca-attention-mode-line-map))
+   (when (and sawyer-eca-finished-unseen
+              (buffer-live-p sawyer-eca-latest-finished-buffer))
+     (propertize " ECA: DONE "
+                 'face 'success
+                 'help-echo "An ECA turn finished; click to visit"
+                 'mouse-face 'mode-line-highlight
+                 'local-map sawyer-eca-finished-mode-line-map))))
+
+(defconst sawyer-eca-activity-mode-line-format
+  '(:eval (sawyer-eca-activity-mode-line))
+  "Mode-line construct showing recent ECA activity.")
+
+(defun sawyer-eca-install-mode-line ()
+  "Add the ECA activity indicator to the current buffer's mode line."
+  (when (and mode-line-format
+             (not (member sawyer-eca-activity-mode-line-format
+                          mode-line-format)))
+    (setq-local mode-line-format
+                (cons sawyer-eca-activity-mode-line-format mode-line-format))))
+
+(add-hook 'after-change-major-mode-hook #'sawyer-eca-install-mode-line)
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (dolist (buffer (buffer-list))
+              (with-current-buffer buffer
+                (sawyer-eca-install-mode-line)))))
+
 ;;; Evil
 
 (require 'evil)
-(evil-collection-init '(calendar calc dired magit))
+(evil-collection-init '(calendar calc corfu dired eglot magit))
 (evil-mode 1)
 
 (defun fix-cursor-indent ()
@@ -188,6 +291,9 @@
         "aa" #'eca
         "ab" #'eca-switch-to-chat
         "at" #'eca-chat-select
+        "an" #'eca-chat-go-to-next-attention
+        "au" #'sawyer-eca-go-to-latest-attention
+        "af" #'sawyer-eca-go-to-latest-finished
         "ai" #'eca-chat-inline-prompt
         "ar" #'eca-rewrite
         "ac" #'eca-completion-mode
@@ -374,6 +480,34 @@
 ;;; Language servers
 
 (require 'eglot)
+
+(defun sawyer-eglot-python-package-roots ()
+  "Return Python import roots beneath the current project's py directory."
+  (let ((python-directory (expand-file-name "py" default-directory)))
+    (when (file-directory-p python-directory)
+      (let ((nested-package-roots
+             (seq-filter
+              (lambda (directory)
+                (and (file-directory-p directory)
+                     (not (file-exists-p
+                           (expand-file-name "__init__.py" directory)))
+                     (or (file-exists-p
+                          (expand-file-name "pyproject.toml" directory))
+                         (file-exists-p
+                          (expand-file-name "setup.py" directory)))))
+              (directory-files python-directory t
+                               directory-files-no-dot-files-regexp))))
+        (append nested-package-roots (list python-directory))))))
+
+(defun sawyer-eglot-workspace-configuration (_server)
+  "Build project-aware Eglot configuration for SERVER."
+  (when-let* ((package-roots (sawyer-eglot-python-package-roots)))
+    `(:basedpyright.analysis
+      (:extraPaths ,(vconcat package-roots)))))
+
+(setq-default eglot-workspace-configuration
+              #'sawyer-eglot-workspace-configuration)
+
 (dolist (hook '(c-mode-hook
                 c++-mode-hook
                 go-mode-hook

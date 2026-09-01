@@ -5,5 +5,8 @@
     "enabled": true,
     "notifications": true,
     "sound": false
+  },
+  "keybinds": {
+    "leader": "alt+space"
   }
 }

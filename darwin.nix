@@ -19,6 +19,10 @@
    homebrew = {
      enable = true;
      taps = [ "d12frosted/emacs-plus" ];
+     brews = [
+       "gcc"
+       "libgccjit"
+     ];
      casks = [
        "1password"
        "docker-desktop"
