@@ -3,11 +3,11 @@
     "agents": {
       "flake": false,
       "locked": {
-        "lastModified": 1788294292,
-        "narHash": "sha256-FYWz0h6syv/31VElBW7CmalYlSvFRMEgruGl0Xp2juE=",
+        "lastModified": 1788297557,
+        "narHash": "sha256-zx888pQqD2EFfypENfd0O9lNDkyy/DG7IjGzw1/cScc=",
         "ref": "refs/heads/main",
-        "rev": "0348e69614e717acf43d33019e02783385053ef9",
-        "revCount": 20,
+        "rev": "809aa03bfeaffd13e3a9e069408720fafebb23a1",
+        "revCount": 21,
         "type": "git",
         "url": "ssh://git@github.com/Sawyer-Powell/agents.git"
       },
