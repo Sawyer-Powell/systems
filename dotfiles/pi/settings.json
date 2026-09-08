@@ -9,13 +9,13 @@
   "agents": {
     "models": {
       "fast": {
-        "provider": "openrouter",
-        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
         "thinking": "low"
       },
       "deliberate": {
-        "provider": "openrouter",
-        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
         "thinking": "high"
       }
     },

@@ -32,6 +32,7 @@ in
   # ── Packages shared across Linux/macOS where available ─
   home.packages = with pkgs; [
     zellij
+    dtach # PTY holder for attachable pi agents (extensions/agents)
     btop
     ripgrep
     fd
