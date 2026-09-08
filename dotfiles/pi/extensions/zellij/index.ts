@@ -21,6 +21,7 @@ import { stat } from "node:fs/promises";
 import * as path from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { recordZellijContext } from "./context.ts";
 import { createNvimKind } from "./kinds/nvim.ts";
 import { createPiKind } from "./kinds/pi.ts";
 import * as panes from "./panes.ts";
@@ -140,6 +141,7 @@ export default function processPanesExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		recordZellijContext(ctx.sessionManager.getSessionId());
 		reconstruct(ctx);
 		void reconcile();
 	});
