@@ -35,9 +35,9 @@
 (package-initialize)
 
 (setq package-selected-packages
-      '(corfu dashboard doom-themes eca evil evil-collection go-mode ivy magit
-        markdown-mode math-preview obsidian rust-mode typescript-mode
-        visual-fill-column))
+      '(adaptive-wrap corfu dashboard doom-themes eca evil evil-collection
+        go-mode ivy magit markdown-mode math-preview obsidian rust-mode
+        typescript-mode visual-fill-column))
 
 ;; Homebrew provides Emacs itself on macOS; Linux receives these packages from
 ;; Nix. Install anything missing without blocking first boot on a prompt.
@@ -354,6 +354,7 @@
 (defun sawyer-setup-markdown-buffer ()
   "Use a readable, rendered layout for Markdown notes."
   (visual-line-mode 1)
+  (visual-wrap-prefix-mode 1)
   (setq-local visual-fill-column-width 90
               visual-fill-column-center-text t)
   (visual-fill-column-mode 1)
