@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "theme": {
+    "name": "gruvbox-dark-hard"
+  },
+  "keybinds": {
+    "leader": "alt+space"
+  },
+  "attention": {
+    "enabled": false,
+    "notifications": false,
+    "sound": false
+  },
+  "diffs": {
+    "wrap": "word"
+  },
+  "session": {
+    "sidebar": "auto",
+    "scrollbar": false,
+    "thinking": "show"
+  },
+  "animations": true
+}

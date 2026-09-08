@@ -236,8 +236,8 @@ in
     force = true;
   };
 
-  xdg.configFile."opencode/tui.json" = {
-    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/tui.json";
+  xdg.configFile."opencode/cli.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/opencode/cli.json";
     force = true;
   };
 
