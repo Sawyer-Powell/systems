@@ -3,9 +3,6 @@
   "default_agent": "build",
   "plugin": ["@mohak34/opencode-notifier@0.2.8"],
   "permission": "allow",
-  "experimental": {
-    "subagent_depth": 2
-  },
   "mcp": {
     "linear": {
       "type": "remote",
