@@ -4,7 +4,20 @@ return {
     build = ":TSUpdate",
     config = function()
       -- Install parsers
-      require("nvim-treesitter").install({ "rust", "typescript", "javascript", "svelte", "html", "css" })
+      require("nvim-treesitter").install({
+        "rust",
+        "typescript",
+        "javascript",
+        "svelte",
+        "html",
+        "css",
+        "python",
+        "lua",
+        "bash",
+        "json",
+        "yaml",
+        "toml",
+      })
 
       -- Enable treesitter highlighting for all buffers
       vim.api.nvim_create_autocmd("FileType", {

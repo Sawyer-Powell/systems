@@ -4,11 +4,8 @@ return {
   cmd = { "ConformInfo" },
   opts = {
     formatters_by_ft = {
-      python = {
-        "isort",
-        "autopep8",
-        "ruff_fix",
-      },
+      -- ruff_fix applies lint fixes + import sorting, ruff_format formats.
+      python = { "ruff_fix", "ruff_format" },
     },
     format_on_save = { timeout_ms = 500 },
   },

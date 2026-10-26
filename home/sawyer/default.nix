@@ -59,6 +59,8 @@ in
     gopls
     clang-tools
     typescript-language-server
+    ruff
+    svelte-language-server
     cargo-nextest
     bacon
     cargo-watch

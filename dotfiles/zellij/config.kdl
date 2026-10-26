@@ -22,7 +22,7 @@ keybinds clear-defaults=true {
         bind "l" { MoveFocus "right"; }
         bind "n" { NewPane; SwitchToMode "normal"; }
         bind "p" { SwitchFocus; }
-        bind "Alt w" { SwitchToMode "normal"; }
+        bind "Alt a" { SwitchToMode "normal"; }
         bind "r" { NewPane "right"; SwitchToMode "normal"; }
         bind "s" { NewPane "stacked"; SwitchToMode "normal"; }
         bind "w" { ToggleFloatingPanes; SwitchToMode "normal"; }
@@ -129,7 +129,7 @@ keybinds clear-defaults=true {
             }
             SwitchToMode "normal"
         }
-        bind "Alt o" { SwitchToMode "normal"; }
+        bind "Alt a" { SwitchToMode "normal"; }
         bind "p" {
             LaunchOrFocusPlugin "plugin-manager" {
                 floating true
@@ -167,7 +167,15 @@ keybinds clear-defaults=true {
         bind "Alt p" { TogglePaneInGroup; }
         bind "Alt Shift p" { ToggleGroupMarking; }
         bind "Alt q" { Quit; }
-        bind "Alt /" {
+        // nvim-style pane ops: mirrors <leader>. <leader>/ <leader>w <leader>H/J/K/L
+        bind "Alt ." { NewPane "down"; SwitchToMode "normal"; }
+        bind "Alt /" { NewPane "right"; SwitchToMode "normal"; }
+        bind "Alt w" { CloseFocus; SwitchToMode "normal"; }
+        bind "Alt Shift h" { MovePane "left"; }
+        bind "Alt Shift j" { MovePane "down"; }
+        bind "Alt Shift k" { MovePane "up"; }
+        bind "Alt Shift l" { MovePane "right"; }
+        bind "Alt ," {
             LaunchOrFocusPlugin "configuration" {
                 floating true
                 move_to_focused_tab true
@@ -178,12 +186,7 @@ keybinds clear-defaults=true {
             }
         }
         bind "Alt c" { ToggleFloatingPanes; }
-        bind "Alt p" {
-            LaunchOrFocusPlugin "session-manager" {
-                floating true
-                move_to_focused_tab true
-            }
-        }
+        // session-manager lives inside session mode (Alt s then w)
         bind "Alt Shift c" {
             Run "claude" {
                 floating true
@@ -199,7 +202,7 @@ keybinds clear-defaults=true {
         bind "Ctrl h" { SwitchToMode "move"; }
     }
     shared_except "locked" "session" {
-        bind "Alt o" { SwitchToMode "session"; }
+        bind "Alt s" { SwitchToMode "session"; }
     }
     shared_except "locked" "scroll" {
         bind "Alt left" { MoveFocusOrTab "left"; }
@@ -221,7 +224,7 @@ keybinds clear-defaults=true {
         bind "Ctrl t" { SwitchToMode "tab"; }
     }
     shared_except "locked" "pane" {
-        bind "Alt w" { SwitchToMode "pane"; }
+        bind "Alt a" { SwitchToMode "pane"; }
     }
     shared_except "locked" "resize" {
         bind "Alt r" { SwitchToMode "resize"; }
