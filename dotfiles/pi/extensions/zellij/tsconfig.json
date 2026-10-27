@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"target": "ES2023",
+		"lib": ["ES2023"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"baseUrl": "/Users/sawyer/.pi/agent/install/releases/1.3.0/node_modules",
+		"paths": {
+			"typebox": ["/Users/sawyer/.pi/agent/install/releases/1.3.0/node_modules/typebox/build/index.d.mts"],
+			"typebox/value": ["/Users/sawyer/.pi/agent/install/releases/1.3.0/node_modules/typebox/build/value/index.d.mts"],
+			"typebox/compile": ["/Users/sawyer/.pi/agent/install/releases/1.3.0/node_modules/typebox/build/compile/index.d.mts"]
+		},
+		"types": ["node"],
+		"typeRoots": ["/Users/sawyer/.pi/agent/install/releases/1.3.0/node_modules/@types"],
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true
+	},
+	"include": ["**/*.ts"]
+}

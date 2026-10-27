@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "radius": {
+      "url": "https://radius.pi.dev/mcp",
+      "auth": {
+        "provider": "radius"
+      },
+      "enabled": false
+    },
+    "exa": {
+      "url": "https://mcp.exa.ai/mcp",
+      "headers": {
+        "Authorization": "!echo Bearer $(op read 'op://Personal/Exa AI/credential')"
+      },
+      "exposure": "direct",
+      "description": "Web and code search, company/people research, and crawling via Exa"
+    }
+  }
+}

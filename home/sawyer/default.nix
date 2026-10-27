@@ -278,6 +278,39 @@ in
     force = true;
   };
 
+  # ── Pi ──────────────────────────────────────────────
+  # Only config is tracked; auth.json, models-store.json, sessions/, install/
+  # and bin/ stay untracked runtime state.
+  home.file.".pi/agent/settings.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/settings.json";
+    force = true;
+  };
+
+  home.file.".pi/agent/APPEND_SYSTEM.md" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/APPEND_SYSTEM.md";
+    force = true;
+  };
+
+  home.file.".pi/agent/mcp.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/mcp.json";
+    force = true;
+  };
+
+  home.file.".pi/agent/models.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/models.json";
+    force = true;
+  };
+
+  home.file.".pi/agent/agents" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/agents";
+    force = true;
+  };
+
+  home.file.".pi/agent/extensions" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/extensions";
+    force = true;
+  };
+
   # Let Home Manager manage itself.
   programs.home-manager.enable = true;
 

@@ -1,0 +1,27 @@
+{
+  "defaultProvider": "openrouter",
+  "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
+  "defaultThinkingLevel": "high",
+  "defaultTools": [
+    "+codemode"
+  ],
+  "hideThinkingBlock": true,
+  "agents": {
+    "models": {
+      "fast": {
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "thinking": "low"
+      },
+      "deliberate": {
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "thinking": "high"
+      }
+    },
+    "maxDepth": 3
+  },
+  "collapseChangelog": true,
+  "theme": "system",
+  "quietStartup": true
+}
