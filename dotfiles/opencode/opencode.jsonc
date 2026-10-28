@@ -13,6 +13,11 @@
       "url": "https://mcp.notion.com/mcp",
       "enabled": true
     },
+    "datadog": {
+      "type": "remote",
+      "url": "https://mcp.us5.datadoghq.com/v1/mcp",
+      "enabled": true
+    },
     "plenful": {
       "type": "remote",
       "url": "https://connectors.staging.plenful.com/mcp",

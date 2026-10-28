@@ -1,9 +1,23 @@
 {
   "$schema": "https://eca.dev/config.json",
+  "extraConfigs": [
+    "~/.config/eca/agent-overrides.json"
+  ],
   "defaultModel": "openai/gpt-5.6-sol",
   "toolCall": {
     "approval": {
       "byDefault": "allow"
+    }
+  },
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "notion": {
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "plenful": {
+      "url": "https://connectors.staging.plenful.com/mcp"
     }
   },
   "agent": {

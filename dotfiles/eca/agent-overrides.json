@@ -1,0 +1,108 @@
+{
+  "$schema": "https://eca.dev/config.json",
+  "agent": {
+    "code-reviewer": {
+      "spawnableBy": "review",
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file",
+        "spawn_agent",
+        "task",
+        "git",
+        "linear__(?!(get_issue|list_comments|get_attachment|extract_images)$).*"
+      ]
+    },
+    "design": {
+      "disabledTools": [
+        "spawn_agent"
+      ]
+    },
+    "harness": {
+      "disabledTools": [
+        "spawn_agent"
+      ]
+    },
+    "linear-task-verifier": {
+      "spawnableBy": "linear",
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file",
+        "spawn_agent",
+        "task",
+        "git",
+        "linear__(?!(get_issue|list_comments|get_attachment|extract_images)$).*"
+      ]
+    },
+    "linear-task-worker": {
+      "spawnableBy": "linear",
+      "disabledTools": [
+        "spawn_agent",
+        "task",
+        "linear__(?!(get_issue|list_comments|get_attachment|extract_images)$).*"
+      ]
+    },
+    "linear": {
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file"
+      ]
+    },
+    "mont-task-verifier": {
+      "spawnableBy": "mont",
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file",
+        "spawn_agent",
+        "task",
+        "git"
+      ]
+    },
+    "mont-task-worker": {
+      "spawnableBy": "mont",
+      "disabledTools": [
+        "spawn_agent",
+        "task"
+      ]
+    },
+    "mont": {},
+    "pr-submitter": {
+      "spawnableBy": [
+        "linear",
+        "mont"
+      ],
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file",
+        "spawn_agent",
+        "task",
+        "linear",
+        "notion"
+      ]
+    },
+    "review": {
+      "disabledTools": [
+        "edit_file",
+        "write_file",
+        "move_file",
+        "git",
+        "linear",
+        "notion"
+      ]
+    },
+    "worker": {
+      "spawnableBy": [
+        "linear",
+        "mont"
+      ],
+      "disabledTools": [
+        "spawn_agent",
+        "task"
+      ]
+    }
+  }
+}

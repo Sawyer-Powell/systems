@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# jjc - create, open, list, and remove jj workspaces.
+
+set -euo pipefail
+
+# Use a revset (not a bare bookmark name) so this still resolves when `main`
+# is conflicted, which is common when local main has diverged from origin.
+BASE_REV="${JJC_BASE_REV:-latest(bookmarks(exact:\"main\"))}"
+WORKSPACES_ROOT="${JJC_WORKSPACES_ROOT:-$HOME/.jj-workspaces}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  jjc new <name> [--base <rev>]
+  jjc resume [<name>]
+  jjc open [<name>]
+  jjc rm <name>
+  jjc ls
+  jjc paths
+
+Editor targets:
+  jjc codex new <name> [--base <rev>]
+  jjc codex resume [<name>]
+  jjc zed new <name> [--base <rev>]
+  jjc zed resume [<name>]
+
+Env:
+  JJC_BASE_REV         default base revision for `new` (default: main)
+  JJC_WORKSPACES_ROOT  workspace directory (default: ~/.jj-workspaces)
+EOF
+}
+
+die() { echo "jjc: $*" >&2; exit 1; }
+
+repo_root() { jj workspace root 2>/dev/null || die "not inside a jj repo"; }
+
+# Resolve to the default workspace's path (the canonical repo directory).
+# In secondary workspaces, .jj/repo is a file pointing at the default repo.
+canonical_root() {
+  local root marker
+  root=$(repo_root)
+  marker="$root/.jj/repo"
+  if [[ -f "$marker" ]]; then
+    dirname "$(dirname "$(cat "$marker")")"
+  else
+    echo "$root"
+  fi
+}
+
+# Keep repositories separate so workspace names can be reused safely.
+new_workspace_path() {
+  local name="$1" canonical
+  canonical=$(canonical_root)
+  echo "$WORKSPACES_ROOT/$(basename "$canonical")/$name"
+}
+
+# List workspaces as TSV: <name>\t<path>. Existing workspaces are discovered
+# regardless of where they were created by finding .jj/repo pointers to the
+# canonical repository store.
+discover_workspaces() {
+  local canonical canonical_marker search_root default_name repo_file path name
+  canonical=$(canonical_root)
+  canonical_marker="$canonical/.jj/repo"
+  search_root=$(dirname "$canonical")
+
+  default_name=$(strings "$canonical/.jj/working_copy/checkout" 2>/dev/null | tail -1)
+  printf '%s\t%s\n' "${default_name:-default}" "$canonical"
+
+  while IFS= read -r repo_file; do
+    [[ -f "$repo_file" ]] || continue
+    [[ "$(cat "$repo_file" 2>/dev/null)" == "$canonical_marker" ]] || continue
+    path=$(dirname "$(dirname "$repo_file")")
+    name=$(strings "$path/.jj/working_copy/checkout" 2>/dev/null | tail -1)
+    [[ -n "$name" ]] && printf '%s\t%s\n' "$name" "$path"
+  done < <(find "$search_root" "$WORKSPACES_ROOT" -mindepth 2 -maxdepth 5 -type f -path '*/.jj/repo' 2>/dev/null)
+}
+
+workspace_path_for() {
+  local name="$1"
+  discover_workspaces | awk -F'\t' -v n="$name" '$1==n {print $2; exit}'
+}
+
+open_in_editor() {
+  local editor="$1" path="$2"
+  command -v "$editor" >/dev/null || die "$editor CLI required"
+  case "$editor" in
+    codex)
+      echo "-> codex app $path"
+      codex app "$path"
+      ;;
+    zed)
+      echo "-> zed $path"
+      zed "$path"
+      ;;
+    *) die "unknown editor: $editor" ;;
+  esac
+}
+
+cmd_new() {
+  local editor="$1" name="${2:-}"
+  shift
+  [[ $# -gt 0 ]] && shift
+  [[ -n "$name" ]] || { usage; exit 2; }
+
+  local base="$BASE_REV"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base) [[ $# -ge 2 ]] || die "--base requires a revision"; base="$2"; shift 2 ;;
+      *)      die "unknown flag: $1" ;;
+    esac
+  done
+
+  local existing path
+  existing=$(workspace_path_for "$name")
+  [[ -z "$existing" ]] || die "workspace '$name' already exists at $existing; use 'jjc $editor resume $name'"
+
+  path=$(new_workspace_path "$name")
+  mkdir -p "$(dirname "$path")"
+
+  echo "-> jj workspace add --name $name -r $base $path"
+  jj workspace add --name "$name" -r "$base" "$path"
+  open_in_editor "$editor" "$path"
+  echo "workspace '$name' opened in $editor"
+}
+
+cmd_resume() {
+  local editor="$1" name="${2:-}"
+
+  if [[ -z "$name" ]]; then
+    command -v fzf >/dev/null || die "provide a workspace name or install fzf"
+    name=$(discover_workspaces \
+      | fzf --with-nth=1,2 --delimiter=$'\t' --prompt="jj workspace> " \
+      | awk -F'\t' '{print $1}') || exit 0
+    [[ -n "$name" ]] || exit 0
+  fi
+
+  local path
+  path=$(workspace_path_for "$name")
+  [[ -n "$path" ]] || die "unknown workspace: $name"
+  [[ -d "$path" ]] || die "workspace directory missing: $path"
+  open_in_editor "$editor" "$path"
+}
+
+cmd_rm() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || { usage; exit 2; }
+
+  local path canonical current
+  path=$(workspace_path_for "$name" 2>/dev/null || true)
+  [[ -n "$path" ]] || die "unknown workspace: $name"
+  [[ -d "$path" ]] || die "workspace directory missing: $path"
+
+  path=$(cd "$path" && pwd -P)
+  canonical=$(cd "$(canonical_root)" && pwd -P)
+  current=$(cd "$(repo_root)" && pwd -P)
+
+  [[ "$path" != "/" ]] || die "refusing to remove filesystem root"
+  [[ "$path" != "$canonical" ]] || die "refusing to remove the default workspace: $path"
+  [[ "$path" != "$current" ]] || die "refusing to remove the workspace containing the current shell; run jjc rm from another workspace"
+
+  echo "-> jj workspace forget $name"
+  jj workspace forget "$name"
+  echo "-> removing workspace directory: $path"
+  command rm -rf -- "$path"
+  echo "workspace '$name' forgotten and directory removed"
+}
+
+cmd_ls() { jj workspace list; }
+cmd_paths() { discover_workspaces; }
+
+cmd_editor() {
+  local editor="$1" sub="${2:-}"
+  shift
+  [[ $# -gt 0 ]] && shift
+  case "$sub" in
+    new)         cmd_new "$editor" "$@" ;;
+    resume|open) cmd_resume "$editor" "$@" ;;
+    -h|--help|"") usage ;;
+    *)           die "unknown $editor command: $sub" ;;
+  esac
+}
+
+main() {
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    new)         cmd_new codex "$@" ;;
+    resume|open) cmd_resume codex "$@" ;;
+    rm)          cmd_rm "$@" ;;
+    ls)          cmd_ls "$@" ;;
+    paths)       cmd_paths "$@" ;;
+    codex|zed)   cmd_editor "$sub" "$@" ;;
+    -h|--help|"") usage ;;
+    *)           usage; exit 2 ;;
+  esac
+}
+
+main "$@"

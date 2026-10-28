@@ -18,9 +18,13 @@
    # while the CLI remains managed by Home Manager/nixpkgs.
    homebrew = {
      enable = true;
-     taps = [ "d12frosted/emacs-plus" ];
-     brews = [
-       "gcc"
+      taps = [
+        "anomalyco/tap"
+        "d12frosted/emacs-plus"
+      ];
+      brews = [
+        "anomalyco/tap/opencode-v2"
+        "gcc"
        "libgccjit"
      ];
      casks = [

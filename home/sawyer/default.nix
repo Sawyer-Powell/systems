@@ -46,7 +46,11 @@ in
     uv
     neovim
     tree-sitter
-    opencode
+    (writeShellApplication {
+      name = "jjc";
+      runtimeInputs = [ findutils gawk jujutsu ];
+      text = builtins.readFile ../../dotfiles/scripts/jjc;
+    })
 
     # Rust development: a Nix-pinned stable toolchain and fast, project-local
     # workflows. Keep this here (rather than rustup) so every Home Manager host
@@ -80,6 +84,10 @@ in
     ninja
 
     zsh
+  ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
+    # macOS uses the first-party OpenCode v2 beta from Homebrew.
+    # Keep the stable nixpkgs package for the NixOS hosts.
+    opencode
   ] ++ lib.optionals isPersonal [
     _1password-cli
   ] ++ lib.optionals (isPersonal && pkgs.stdenv.isDarwin) [
@@ -190,6 +198,7 @@ in
       alias vi=nvim
       alias poly="polytoken"
       alias ask="polytoken exec"
+      eval "$(direnv hook zsh)"
     '';
   };
 
@@ -206,6 +215,16 @@ in
 
   xdg.configFile."eca/config.json" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/eca/config.json";
+    force = true;
+  };
+
+  xdg.configFile."eca/agent-overrides.json" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/eca/agent-overrides.json";
+    force = true;
+  };
+
+  xdg.configFile."eca/agents" = {
+    source = inputs.agents + "/adapters/opencode/agents";
     force = true;
   };
 
@@ -309,6 +328,11 @@ in
 
   home.file.".pi/agent/extensions" = {
     source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/extensions";
+    force = true;
+  };
+
+  home.file.".pi/agent/themes" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/pi/themes";
     force = true;
   };
 
