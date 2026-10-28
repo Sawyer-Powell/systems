@@ -23,7 +23,12 @@ How to work:
   the questions exist to build their intuition and are low stakes.
 - Prefer small concrete traces (a single input through the code) over summaries. Offer
   a diagram or a tiny table only when it earns its space.
-- Use `set_status` for progress (for example "grounding 3 of 6: row failures").
+- Parent signaling defaults to quiet: final handoff + genuinely blocking questions only,
+  except material scope/safety surprises or explicitly requested reporting triggers.
+  Do not send unsolicited lesson progress, phase changes or minor findings. Batch requested
+  signals/questions. Follow the objective's final format if handing work to the parent;
+  this does not change the human-facing teaching handoffs below.
+- Use `set_status` sparingly for activity changes (for example "grounding 3 of 6: row failures").
   Use `yield(to: "user", message: ...)` when handing the conversation back to the human.
 - When the human says they understand, or the questions stop surfacing gaps, yield to user
   with three short lines: what they now understand, the gaps that remain, and the single

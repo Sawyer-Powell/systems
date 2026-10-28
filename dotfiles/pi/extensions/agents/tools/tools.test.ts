@@ -109,6 +109,20 @@ describe("flows", () => {
 		await run(tools, "kill_agent", { id: "scout.s.0003" });
 		assert.deepEqual(calls, ["scout.s.0003"]);
 	});
+	it("spawn_agent forwards optional reporting without changing legacy objectives", async () => {
+		const requests: Array<{ objective: string; reporting?: string }> = [];
+		const tools = harness(mk("main.root.0001", null), true, {
+			spawn: async (request) => {
+				requests.push(request);
+				return mk("worker.x.9999", "main.root.0001");
+			},
+		});
+		await run(tools, "spawn_agent", { profile: "worker", objective: "do" });
+		await run(tools, "spawn_agent", { profile: "worker", objective: "do", reporting: "Notify on regression; final: evidence." });
+		assert.equal(requests[0]?.objective, "do");
+		assert.equal(requests[0]?.reporting, undefined);
+		assert.equal(requests[1]?.reporting, "Notify on regression; final: evidence.");
+	});
 	it("spawn_agent reports id and how to reach it", async () => {
 		const tools = harness(mk("main.root.0001", null), true, {
 			spawn: async (r: { profile: string }) => mk(`${r.profile}.x.9999`, "main.root.0001"),

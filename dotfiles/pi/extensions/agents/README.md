@@ -51,6 +51,25 @@ or blocked reasons, not extra workflow states. There is no model-controlled done
 Archive is not self-declared success. Completion is handoff content; retirement is an
 owner/user decision; resource residency is a third independent concern.
 
+## Parent ↔ child signaling
+
+Default is **quiet**: final handoff + genuinely blocking questions, except material
+scope/safety surprises. `spawn_agent` accepts optional `reporting` text: requested
+notification triggers and final-handoff sections/length. Example: “Notify once on >10%
+benchmark regression; final <=150 words: result, paths, verification, risks.” Omitted/blank
+uses <=200 words with those sections; explicit objective reporting may override the default.
+The supervisor appends this contract to the durable objective/initial instruction, so it
+survives parking/resume without a new daemon protocol. Keep objective/field policies consistent.
+
+Children must not send routine progress, phase changes or minor findings via send/ask/yield.
+Batch requested signals/questions; prefer `set_status` for meaningful activity changes and
+task artifacts for detailed notes. Parents read `## Agents` (refreshed per run), `list_agents`
+or artifacts on demand. `info` still wakes an idle model or steers a busy one; this is
+prompt-level guidance, not delivery suppression. Questions and final parent handoffs remain
+waking; profile-specific human handoffs are unchanged. Existing callers remain compatible;
+existing running sessions are not rewritten. [SIGNALING.md](SIGNALING.md) has the source
+trace, full contract, enforcement alternatives and verification limits.
+
 ## Existing UI, clearer ownership
 
 `/agents` / **alt+a** retains fuzzy search, scope, depth-first tree, native attachment,

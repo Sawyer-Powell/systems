@@ -60,6 +60,32 @@ receipt entries, fsyncs the session and records entry IDs. Missing/partial files
 Startup reconciles this session/DB transaction gap. Unreceipted stable IDs remain durable
 for recovery; delivery is at-least-once intent, never exactly-once external side effects.
 
+## Parent signaling contract
+
+`spawn_agent.reporting?: string` specifies requested notification triggers and final
+handoff format/length. The supervisor encodes it in the stored objective and existing
+initial instruction, not a new IPC/store field. Omitted/blank means quiet: final handoff
+plus genuinely blocking questions, except material scope/safety surprises. Default final
+<=200 words: result, paths, verification, unresolved risks/questions. Explicit objective
+reporting overrides the default; an explicit field is the appended parent policy. Later
+parent instructions may revise it. Existing callers need no change; old sessions are not
+rewritten. Profile-specific user handoffs retain their existing behavior.
+
+Child: no routine progress, phase changes, minor findings or artifact-readable detail via
+send/ask/yield. Ask only blocking questions the parent must resolve; batch related questions
+and end the turn. Send info only for policy-listed triggers or timely scope/safety surprises;
+batch related signals, one per trigger, no unchanged repeats/periodic reports unless requested.
+Yield to parent only at completed-work handoff, not intermediate phases. Use set_status
+sparingly for activity changes and artifacts for detailed notes. Parent: state actionable
+triggers/final expectations; read Agents snapshot/list/artifacts on demand, not push progress.
+
+This is a prompt contract, not enforced delivery throttling. Explicit send_message info
+continues to be durable context mail: wakes idle/steers busy parents (including human roots).
+Question/answer matching, parent-yield wake, user-yield attention, operational failure/stall
+routing, archive deferral and receipt semantics are unchanged. Status metadata alone never
+wakes a parent; orientation is computed once per run, not live-pushed model context.
+See [SIGNALING.md](SIGNALING.md) for evidence and deferred delivery-enforcement design.
+
 ## Yield at a safe boundary
 
 `yield(to:parent|user,message)` replaces both report_done and ask_user. Genuine ask_parent

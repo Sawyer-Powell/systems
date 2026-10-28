@@ -52,7 +52,8 @@ function registerMessaging(pi: ExtensionAPI, host: AgentsHost) {
 		label: "Send Message",
 		description:
 			"Send a message to your parent (`to: \"parent\"`) or to one of your descendants. Siblings cannot be messaged. " +
-			"Use kind `answer` with `in_reply_to` to answer a question; `instruction` to direct a child; `info` otherwise.",
+			"Use kind `answer` with `in_reply_to` to answer a question; `instruction` to direct a child; `info` for requested signals or material scope/safety surprises. " +
+			"Parent messages wake an idle model or steer a busy one, including info. Default: quiet; no routine progress/phase updates. Use set_status or a notes artifact instead.",
 		parameters: Type.Object({
 			to: Type.String({ description: 'Agent id, or "parent".' }),
 			body: Type.String({ description: "Message text." }),
@@ -107,6 +108,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		description: "Hand work back, then stop autonomous work at the tool-batch boundary. Call this ALONE as your final tool. " +
 			"to parent means work completed: a special durable handoff wakes your parent's MODEL, including a human root. " +
 			"to user flags human attention for review, a decision or conversation, without waking your parent's model. " +
+			"Use parent yield once work is complete, never for progress or phase changes; follow the parent's reporting format/length. " +
 			"Non-interactable profiles yield to parent unless a human explicitly requested a handoff. This never archives you.",
 		parameters: Type.Object({ to: Type.Union([Type.Literal("parent"), Type.Literal("user")]), message: Type.String() }),
 		executionMode: "sequential",
@@ -126,7 +128,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		name: "set_status",
 		label: "Set Status",
 		description:
-			"Set a one-line status (max 60 chars) shown in the user's agent list. Use for progress updates (e.g. 'running tests', 'waiting on CI'). " +
+			"Set a one-line status (max 60 chars) shown in the agent list and parent snapshots without waking the parent. Use sparingly for meaningful activity changes (e.g. 'running tests', 'waiting on CI'). " +
 			"Never put data values, patient or customer information in it. Use yield(to: user) when the human should review, decide or converse, never for progress.",
 		parameters: Type.Object({ note: Type.String({ description: "One short line." }) }),
 		async execute(_id, params) {
@@ -155,10 +157,11 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		label: "Spawn Agent",
 		description:
 			"Start a background agent from a profile. Returns immediately; do not wait. Interactable profiles (e.g. worker) can be attached to by the user; others run headless with a whole-run timeout. " +
-			"Results arrive as messages; status is shown in the user's widget.",
+			"Results arrive as messages; status is shown in the user's widget. Specify reporting triggers and final-handoff format/length when needed; omitted means quiet (final + blocking questions, with material scope/safety exceptions). Do not request routine updates unless you need to act on them.",
 		parameters: Type.Object({
 			profile: Type.String({ description: "Profile name (see list_agents output or the profiles directory)." }),
 			objective: Type.String({ description: "A concrete objective, including acceptance criteria." }),
+			reporting: Type.Optional(Type.String({ description: "Parent signaling policy: when to notify (blocking only, named milestones, specific findings/conditions), and final-handoff sections/length cap. Default: quiet; final <=200 words with result, paths, verification, risks/questions. Overrides may also be written in the objective; keep them consistent." })),
 			name: Type.Optional(Type.String({ description: "Short slug for the agent id." })),
 			step_timeout_seconds: Type.Optional(Type.Number({ description: "Max time one step may take without activity. Default 180." })),
 			run_timeout_seconds: Type.Optional(Type.Number({ description: "Whole-run limit; non-interactable profiles only. Default 300." })),
@@ -167,6 +170,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 			const input = await supervisor.spawn({
 				profile: params.profile,
 				objective: params.objective,
+				reporting: params.reporting,
 				name: params.name,
 				stepTimeoutMs: params.step_timeout_seconds ? params.step_timeout_seconds * 1000 : undefined,
 				runTimeoutMs: params.run_timeout_seconds ? params.run_timeout_seconds * 1000 : undefined,

@@ -12,6 +12,7 @@ import {
 	newId,
 } from "../store/index.ts";
 import { describeProfiles, loadProfiles, resolveProfile } from "./profiles.ts";
+import { withReporting } from "./signaling.ts";
 
 interface SpawnRequest {
 	/** Profile name from `~/.pi/agent/agents/*.md`. */
@@ -19,6 +20,8 @@ interface SpawnRequest {
 	/** Short slug for the id and display name. */
 	name?: string;
 	objective: string;
+	/** Parent-requested triggers and final-handoff format; omitted means quiet. */
+	reporting?: string;
 	stepTimeoutMs?: number;
 	/** Only honoured for non-interactable profiles. */
 	runTimeoutMs?: number;
@@ -67,7 +70,7 @@ export function createSupervisor(host: AgentsHost): Supervisor {
 				role,
 				name: id.split(".")[1] ?? name,
 				parent,
-				objective: request.objective,
+				objective: withReporting(request.objective, request.reporting),
 				profile: snapshot,
 				cwd: host.identity?.cwd ?? ctx.cwd,
 				interactable,
