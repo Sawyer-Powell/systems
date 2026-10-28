@@ -9,14 +9,14 @@
   "agents": {
     "models": {
       "fast": {
-        "provider": "anthropic",
-        "model": "claude-sonnet-5-5",
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
         "thinking": "low"
       },
       "deliberate": {
-        "provider": "anthropic",
-        "model": "claude-sonnet-5-5",
-        "thinking": "high"
+        "provider": "openai-codex",
+        "model": "gpt-6.1-sol",
+        "thinking": "medium"
       }
     },
 
