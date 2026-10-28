@@ -20,6 +20,7 @@ import {
 	SUMMARY_MAX_CHARS,
 	wrapUpText,
 } from "../store/index.ts";
+import { agentLabel } from "../names.ts";
 import { ActivityTracker } from "./activity.ts";
 import { createRootInput } from "./identity.ts";
 import { legacyStartupRefusal } from "./cutover.ts";
@@ -114,19 +115,19 @@ export function registerRuntime(host: AgentsHost): void {
 		// A child's result is a claim of this branch, whether or not it enters the model's context.
 		if (message.kind === "yield" && store.readInput(message.from)?.parent === id) {
 			const status = store.readState(message.from)?.status ?? "unknown";
-			pi.appendEntry(RESULT_ENTRY, resultClaim(message.from, status, message.body, Date.now()));
+			pi.appendEntry(RESULT_ENTRY, { ...resultClaim(message.from, status, message.body, Date.now()), name: agentLabel(store, message.from) });
 		}
 		if (message.deliver === "ui") {
 			pi.appendEntry("agents.receipt", { id: message.id });
-			if (ctx.hasUI) ctx.ui.notify(`[${message.from}] ${message.kind}: ${message.body.slice(0, 200)}`, "info");
+			if (ctx.hasUI) ctx.ui.notify(`[${agentLabel(store, message.from)}] ${message.kind}: ${message.body.slice(0, 200)}`, "info");
 			await receipt();
 			return;
 		}
 		// A custom message reaches the model like user input and wakes an idle agent, but the
 		// transcript shows who sent it instead of pretending the user typed it.
-		const details: AgentMessageDetails = { from: message.from, kind: message.kind, id: message.id, inReplyTo: message.inReplyTo };
+		const details: AgentMessageDetails = { from: message.from, fromName: agentLabel(store, message.from), kind: message.kind, id: message.id, inReplyTo: message.inReplyTo };
 		pi.sendMessage(
-			{ customType: AGENT_MESSAGE, content: agentMessageText(message), display: true, details },
+			{ customType: AGENT_MESSAGE, content: agentMessageText(message, agentLabel(store, message.from)), display: true, details },
 			{ triggerTurn: true, deliverAs: ctx.isIdle() ? undefined : "steer" },
 		);
 	}
@@ -134,9 +135,9 @@ export function registerRuntime(host: AgentsHost): void {
 	function requestYield(message: AgentMessage): void {
 		if (!ctx || !host.identity?.parent) return;
 		pendingYieldRequest = true;
-		const details: AgentMessageDetails = { from: message.from, kind: "control", id: message.id };
+		const details: AgentMessageDetails = { from: message.from, fromName: agentLabel(store, message.from), kind: "control", id: message.id };
 		pi.sendMessage(
-			{ customType: AGENT_MESSAGE, content: agentMessageText({ ...message, body: wrapUpText() }), display: true, details },
+			{ customType: AGENT_MESSAGE, content: agentMessageText({ ...message, body: wrapUpText() }, agentLabel(store, message.from)), display: true, details },
 			{ triggerTurn: true, deliverAs: ctx.isIdle() ? undefined : "steer" },
 		);
 	}
@@ -178,6 +179,7 @@ export function registerRuntime(host: AgentsHost): void {
 			await flush();
 			id = input.id;
 			host.identity = input;
+			pi.setSessionName?.(agentLabel(store, id));
 
 			tracker = new ActivityTracker({ store, id });
 			connection?.removeAllListeners("mail");

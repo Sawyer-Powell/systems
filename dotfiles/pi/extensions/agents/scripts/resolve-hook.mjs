@@ -10,6 +10,7 @@ const map = {
 	"@earendil-works/pi-coding-agent": path.join(pkg, "dist", "index.js"),
 	"@earendil-works/pi-tui": path.join(pkg, "node_modules", "@earendil-works", "pi-tui", "dist", "index.js"),
 	typebox: path.join(pkg, "node_modules", "typebox", "build", "index.mjs"),
+	"typebox/value": path.join(pkg, "node_modules", "typebox", "build", "value", "index.mjs"),
 };
 
 export async function resolve(specifier, context, next) {

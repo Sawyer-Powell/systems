@@ -35,6 +35,13 @@ Paths below are relative to `dotfiles/pi/`; runtime/daemon citations are unchang
   `tools/index.ts:18-30` supplies state/activity/note in `list_agents`. `set_status` changes
   only metadata, never sends mail (`tools/index.ts:134-147`). Prefer these existing surfaces.
 
+## Display names versus addresses
+
+Every display surface uses `parent::child::subchild` lineage names (compact widgets may
+omit the focused ancestor); message headers and snapshots also show immutable IDs.
+Use those IDs for tool addressing, never a display path. Message `from`/`to`, question
+IDs, receipts and authorization remain unchanged; labels are presentation only.
+
 ## Contract (recommended and implemented)
 
 Parent states optional `spawn_agent.reporting: string`: notification triggers and final

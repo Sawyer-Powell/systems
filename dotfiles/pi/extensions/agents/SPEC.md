@@ -176,7 +176,14 @@ recovery; attached managed writers fail closed on daemon loss, while human roots
 Default triage: NEEDS YOU, BLOCKED, WORKING, WAITING ON PARENT, IDLE; optional ARCHIVED.
 Every bucket has explicit nonselectable parent headings. Parent groups use their most
 urgent/oldest child rank; child order is stable. Duplicate parent names disambiguate by ID.
-Names are lineage-derived `parent::child::subchild` paths in the first/most important
+Names are universally lineage-derived `parent::child::subchild` paths: UI, Attach tabs,
+native session titles, tool results, Agents snapshots, delivered message headers and
+notifications use shared `names.ts` derivation. Missing lineage falls back to names/IDs;
+old claims retain their stored fallback. IDs remain explicit machine addresses and are
+never renamed or resolved fuzzily by model tools. Compact widgets may omit the focused
+ancestor prefix; zellij labels keep at most 96 characters, leaf end retained, via literal
+argv (no shell interpolation). Process pane/tab labels are owner-qualified suggestions,
+not managed lineage or new addressing semantics. Names occupy the first/most important
 column; stable operation IDs are not renamed. Only duplicate qualified paths add an ID tail.
 There is no arbitrary34-character name cap; secondary columns may fall off narrow rows,
 while selected detail wraps the full qualified name. Search flattens rank but retains that

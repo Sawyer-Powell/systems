@@ -1,5 +1,6 @@
 /** SQLite is the runtime authority. Only the daemon opens a writable connection. */
 import { DatabaseSync } from "node:sqlite";
+import { agentLabel } from "../names.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentInput, AgentMessage, AgentRecord, AgentState, Store } from "../store/index.ts";
@@ -63,7 +64,7 @@ export function openDatabase(home = runtimeHome(), writable = false) {
 			return query(`WITH RECURSIVE tree AS (SELECT * FROM agents WHERE parent=?
 			 UNION ALL SELECT a.* FROM agents a JOIN tree t ON a.parent=t.id) SELECT * FROM tree ORDER BY created`, id);
 		},
-		breadcrumb(id) { return [...store.ancestors(id)].reverse().map(r => r.input.name).concat(store.readInput(id)?.name ?? id).join(" › "); },
+		breadcrumb(id) { return agentLabel(store, id); },
 		create(input) {
 			if (!writable) throw new Error("Read-only store");
 			fs.mkdirSync(store.dir(input.id), { recursive: true, mode: 0o700 });

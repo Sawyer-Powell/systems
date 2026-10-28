@@ -50,7 +50,7 @@ describe("tree", () => {
 		assert.deepEqual(tmp.store.descendants("main.root.0001").map((r) => r.input.id).sort(), ["worker.a.0002", "worker.b.0003", "worker.c.0004"]);
 	});
 	it("builds a breadcrumb", () => {
-		assert.equal(tmp.store.breadcrumb("worker.b.0003"), "main.root.0001 › worker.a.0002 › worker.b.0003");
+		assert.equal(tmp.store.breadcrumb("worker.b.0003"), "main.root.0001::worker.a.0002::worker.b.0003");
 	});
 	it("survives a parent cycle", () => {
 		fs.writeFileSync(path.join(tmp.home, "worker.a.0002", "input.json"), JSON.stringify(mkInput("worker.a.0002", "worker.b.0003")));

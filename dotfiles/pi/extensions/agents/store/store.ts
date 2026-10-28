@@ -6,6 +6,7 @@
  * Writers follow the single-writer rule documented in `types.ts`.
  */
 import { execFileSync } from "node:child_process";
+import { agentName } from "../names.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -216,8 +217,7 @@ export function createStore(home: string = runtimeHome()): Store {
 		breadcrumb(id) {
 			const self = store.readInput(id);
 			if (!self) return id;
-			const chain = [...store.ancestors(id)].reverse().map((record) => record.input.name);
-			return [...chain, self.name].join(" › ");
+			return agentName(self, store.ancestors(id));
 		},
 
 		create(input) {

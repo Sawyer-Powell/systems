@@ -10,7 +10,7 @@ import { DEFAULT_STEP_TIMEOUT_MS } from "../store/index.ts";
  */
 export function createRootInput(store: Store, ctx: ExtensionContext, now = Date.now()): AgentInput {
 	const forkedFrom = forkedFromOf(store, ctx.sessionManager.getHeader()?.parentSession);
-	const name = path.basename(ctx.cwd) || "root";
+	const name = ctx.sessionManager.getSessionName?.() || path.basename(ctx.cwd) || "root";
 	const input: AgentInput = {
 		id: ctx.sessionManager.getSessionId(),
 		role: "main",

@@ -9,6 +9,7 @@ import type { AgentsHost } from "../host.ts";
 import { type AgentRecord, planYield, type StallReport, stallOf } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 import { stallNotice } from "../supervisor/watchdog.ts";
+import { agentLabel, agentName } from "../names.ts";
 import { attach } from "./attach.ts";
 import { createFuzzyList } from "./fuzzy-list.ts";
 import { registerRenderers } from "./render.ts";
@@ -38,7 +39,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		if (!relevant) return;
 		const record = store.record(change.id);
 		if (record && ["stall", "exit"].includes(change.kind) && host.identity?.parent === null && record.input.parent !== self) {
-			const report = stallOf(record); if (report) host.ctx?.ui.notify(stallNotice({ record, report }), "warning");
+			const report = stallOf(record); if (report) host.ctx?.ui.notify(stallNotice({ record, report }, store.ancestors(record.input.id)), "warning");
 		}
 		refresh(host.ctx);
 	};
@@ -53,9 +54,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		// Breadcrumbs from the records already in memory: `store.breadcrumb` re-reads every ancestor per row.
 		const byId = new Map(records.map((r) => [r.input.id, r]));
 		const breadcrumb = (id: string) => {
-			const chain: string[] = [];
-			for (let at = byId.get(id); at && chain.length <= byId.size; at = at.input.parent ? byId.get(at.input.parent) : undefined) chain.unshift(at.input.name);
-			return chain.length ? chain.join(" › ") : id;
+			const record = byId.get(id);
+			return record ? agentName(record.input, byId) : id;
 		};
 		return { records, stalls, now: Date.now(), breadcrumb };
 	}
@@ -72,7 +72,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows, 6, snapshot?.total, { records, focusedId: self }) : undefined, { placement: "aboveEditor" });
 			const record = store.record(self);
 			const parent = record?.input.parent ? store.readInput(record.input.parent) : undefined;
-			ctx.ui.setStatus(WIDGET_KEY, lineageText(record, parent?.name, records.filter(r => r.input.parent === self), snapshot?.children));
+			ctx.ui.setStatus(WIDGET_KEY, lineageText(record, parent ? agentLabel(store, parent.id) : undefined, records.filter(r => r.input.parent === self), snapshot?.children));
 		} catch (error) {
 			process.stderr.write(`[agents] ui refresh failed: ${String(error)}\n`);
 		}
@@ -151,7 +151,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		const id = record.input.id;
 		const current = store.record(id) ?? record;
 		if (current.residency === "blocked" || (current.status === "blocked" && !current.alive)) await supervisor.resume(id, "The user attached to explicitly recover this interrupted session. Re-check in-flight work before acting.");
-		const result = await attach(current, store.ptySocket(id));
+		const result = await attach(current, store.ptySocket(id), store.ancestors(id));
 		if (!result.opened) ctx.ui.notify(`Not inside zellij. Run: ${result.command}`, "info");
 	}
 
@@ -162,8 +162,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		const inherited = host.identity?.forkedFrom ? store.ancestors(input.id).find((a) => a.input.id === host.identity?.forkedFrom) : undefined;
 		return [
 			`${input.id}  (${store.breadcrumb(input.id)})`,
-			...(forkedFrom ? [`forked from ${forkedFrom.name} (${forkedFrom.id})`] : []),
-			...(inherited ? [`inherited, read-only: owned by ${inherited.input.name} (the session this one was forked from)`] : []),
+			...(forkedFrom ? [`forked from ${agentLabel(store, forkedFrom.id)} (${forkedFrom.id})`] : []),
+			...(inherited ? [`inherited, read-only: owned by ${agentLabel(store, inherited.input.id)} (the session this one was forked from)`] : []),
 			`status: ${record.status} · ${record.residency ?? "unknown"}${state?.summary ? ` · ${state.summary.slice(0, 200)}` : ""}`,
 			...(state?.reason ? [`reason: ${state.reason}`] : []),
 			...(state?.handoff ? [`handoff: ${state.handoff.to} (${state.handoff.recipient}) · ${state.handoff.messageId}`] : []),
@@ -179,22 +179,22 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		if (plan.action === "refuse") return { text: plan.reason, level: "warning" };
 		await host.connection?.flush();
 		await host.connection?.request("request-yield", { id: current.input.id });
-		return { text: `Asked ${current.input.name} to wrap up safely and yield to you. No work was interrupted.`, level: "info" };
+		return { text: `Asked ${agentLabel(store, current.input.id)} to wrap up safely and yield to you. No work was interrupted.`, level: "info" };
 	}
 
 	async function act(ctx: ExtensionContext, record: AgentRecord): Promise<void> {
 		const id = record.input.id;
-		const choice = await chooseAction(ctx, `${record.input.name} · ${record.status}`, actionsFor(record, host.identity?.id));
+		const choice = await chooseAction(ctx, `${agentLabel(store, id)} · ${record.status}`, actionsFor(record, host.identity?.id));
 		if (!choice) return;
 		try {
 			if (choice === "attach") {
 				await attachTo(ctx, record);
 			} else if (choice === "message") {
-				const body = await ctx.ui.input(`Message to ${record.input.name}`, "text");
+				const body = await ctx.ui.input(`Message to ${agentLabel(store, id)}`, "text");
 				if (body?.trim()) {
 					await host.connection?.flush();
 					const sent = await host.connection?.request("send", { message: { from: "user", to: id, kind: "instruction", body, deliver: "context" } });
-					ctx.ui.notify(`Sent to ${id}${sent?.deferred ? `; retained, delivery deferred (${sent.deferred})` : ""}`, "info");
+					ctx.ui.notify(`Sent to ${agentLabel(store, id)}${sent?.deferred ? `; retained, delivery deferred (${sent.deferred})` : ""}`, "info");
 				}
 			} else if (choice === "yield") {
 				const result = await requestYield(record);
@@ -203,13 +203,13 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			} else if (choice === "archive" || choice === "restore" || choice === "restore-attach") {
 				await host.connection?.request(choice === "archive" ? "archive" : "restore", { id, actor: "user" });
 				if (choice === "restore-attach") await attachTo(ctx, store.record(id)!);
-				else ctx.ui.notify(`${choice === "archive" ? "Archived" : "Restored"} ${id}. Children were not changed.`, "info");
+				else ctx.ui.notify(`${choice === "archive" ? "Archived" : "Restored"} ${agentLabel(store, id)}. Children were not changed.`, "info");
 			} else if (choice === "interrupt" || choice === "kill") {
 				await supervisor.signal(id, choice);
-				ctx.ui.notify(`${choice} sent to ${id}`, "info");
+				ctx.ui.notify(`${choice} sent to ${agentLabel(store, id)}`, "info");
 			} else if (choice === "resume") {
 				await supervisor.resume(id);
-				ctx.ui.notify(`Resumed ${id}`, "info");
+				ctx.ui.notify(`Resumed ${agentLabel(store, id)}`, "info");
 			} else if (choice === "details") {
 				ctx.ui.notify(detailsText(record), "info");
 			}
@@ -237,7 +237,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 						const result = await requestYield(target); ctx.ui.notify(result.text, result.level);
 					} else {
 						await host.connection?.request(operation, { id: target.input.id, actor: "user" });
-						ctx.ui.notify(`${operation === "archive" ? "Archived" : "Restored"} ${target.input.name}. Children were not changed.`, "info");
+						ctx.ui.notify(`${operation === "archive" ? "Archived" : "Restored"} ${agentLabel(store, target.input.id)}. Children were not changed.`, "info");
 					}
 				} catch (error) { ctx.ui.notify(String(error instanceof Error ? error.message : error), "error"); }
 			},

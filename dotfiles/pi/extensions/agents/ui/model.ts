@@ -4,6 +4,8 @@
  */
 import { type AgentMessageDetails, type AgentRecord, type EffectiveStatus, isTerminal, planYield, RESULT_ENTRY, type ResultClaim, SPAWN_ENTRY, type SpawnClaim, type StallReport } from "../store/index.ts";
 
+import { agentName } from "../names.ts";
+
 export type Tone = "text" | "success" | "warning" | "error" | "muted";
 
 /** A picker/widget row; structurally a `ListItem`. */
@@ -106,18 +108,7 @@ function disambiguateNames(names: Map<string, string>): Map<string, string> {
 /** Rust-style display names derived from immutable lineage; IDs remain operation identities. */
 export function qualifiedNames(records: AgentRecord[]): Map<string, string> {
 	const byId = new Map(records.map(record => [record.input.id, record]));
-	const names = new Map<string, string>();
-	const resolve = (id: string, seen = new Set<string>()): string => {
-		if (names.has(id)) return names.get(id)!;
-		const input = byId.get(id)?.input;
-		if (!input) return id;
-		if (seen.has(id)) return input.name;
-		seen.add(id);
-		const name = input.parent ? `${resolve(input.parent, seen)}::${input.name}` : input.name;
-		names.set(id, name); return name;
-	};
-	for (const record of records) resolve(record.input.id);
-	return disambiguateNames(names);
+	return disambiguateNames(new Map(records.map(record => [record.input.id, agentName(record.input, byId)])));
 }
 
 /** Depth-first rows: roots by creation time, children under their parent. */
@@ -365,13 +356,8 @@ export function widgetLines(rows: Row[], max = 6, total = rows.length, context?:
 	if (context) {
 		const byId = new Map(context.records.map(record => [record.input.id, record]));
 		names = disambiguateNames(new Map(shown.map(row => {
-			const parts: string[] = [], seen = new Set<string>();
-			let current = byId.get(row.id);
-			while (current && current.input.id !== context.focusedId && !seen.has(current.input.id)) {
-				seen.add(current.input.id); parts.unshift(current.input.name);
-				current = current.input.parent ? byId.get(current.input.parent) : undefined;
-			}
-			return [row.id, current?.input.id === context.focusedId && parts.length ? parts.join("::") : row.name];
+			const record = byId.get(row.id);
+			return [row.id, record ? agentName(record.input, byId, { relativeTo: context.focusedId }) : row.name];
 		})));
 	}
 	// Render-only projection: records, full picker names, breadcrumbs and search text stay untouched.
@@ -404,7 +390,7 @@ export function claimLine(customType: string | undefined, data: unknown): string
 	}
 	if (customType === RESULT_ENTRY) {
 		const claim = data as Partial<ResultClaim> | undefined;
-		return claim?.id ? `◂ ${claim.id} ${claim.status ?? ""} · ${oneLine(claim.summary ?? "", 80)}` : undefined;
+		return claim?.id ? `◂ ${claim.name ?? claim.id} ${claim.status ?? ""} · ${oneLine(claim.summary ?? "", 80)}` : undefined;
 	}
 	return undefined;
 }
@@ -419,5 +405,5 @@ export function agentMessageView(content: unknown, details: Partial<AgentMessage
 	const body = text.startsWith("[from ") && newline >= 0 ? text.slice(newline + 1) : text;
 	const lines = body.split("\n");
 	const shown = expanded ? lines : lines.slice(0, COLLAPSED_LINES);
-	return { header: `[from ${details?.from ?? "?"} · ${details?.kind ?? "message"}]`, body: shown, hidden: lines.length - shown.length };
+	return { header: `[from ${details?.fromName ?? details?.from ?? "?"} · ${details?.kind ?? "message"}]`, body: shown, hidden: lines.length - shown.length };
 }

@@ -53,6 +53,13 @@ to take over) without the agent being able to poke at it.
 - `"tab"`: a new tab whose first pane runs the process; `name` becomes the tab
   name, and `direction`/`floating` are rejected because they do not apply.
 
+Pane/tab labels universally use `owner::kind suggestion` (or `owner::explicit name`),
+with the same shared lineage formatter as managed agents. Labels are capped at 96
+characters, keeping the leaf end, and passed as literal argv; colons need no shell quoting.
+The pi kind applies the label to its native session title too. These processes are not
+managed-agent descendants: handles and session IDs remain unchanged. Existing recorded
+processes keep their captured labels; there is no live tab rename or session migration.
+
 Either way the process is tracked identically: same handle, same records, same
 `send_process`/`list_processes`. A tab placement is recorded as
 `{ target: "tab", tabId, paneId }`; pane placements record the tab they landed
@@ -186,7 +193,8 @@ not change pi's cwd; it gives each spawned process its own.
 
 Implement `ProcessKind` (`protocol.ts`) — `relations`, config schema, `spawn`,
 `send`, and `alive` — plus the optional `spawnNote` (a one-line fact about the
-process that now exists) and `afterSpawn` (work that needs a child's channel to
+process that now exists), `setDisplayName` (apply the owner-qualified label to a native
+program's title), and `afterSpawn` (work that needs a child's channel to
 be open, e.g. pi's initial prompt) hooks. Add it to `KINDS` in `index.ts`. The
 core and tools do not change, and placement (pane or tab) is the core's
 business, so a kind never learns where it was put.

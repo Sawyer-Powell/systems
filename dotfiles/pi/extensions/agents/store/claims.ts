@@ -24,6 +24,8 @@ export interface SpawnClaim {
 
 export interface ResultClaim {
 	id: string;
+	/** Display label captured at delivery; old claims fall back to ID. */
+	name?: string;
 	status: string;
 	/** At most CLAIM_SUMMARY_CHARS characters. */
 	summary: string;

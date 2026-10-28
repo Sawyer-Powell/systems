@@ -26,6 +26,8 @@ interface ChildArgsOptions {
 	sessionFile?: string;
 	headless: boolean;
 	extensionDir?: string;
+	/** Display-only lineage label resolved by the launcher. */
+	displayName?: string;
 	/** Tools this extension registers for the child; pi's `--tools` allowlist would otherwise hide them. */
 	extraTools?: string[];
 }
@@ -48,7 +50,7 @@ export function buildChildArgs(
 		"-e",
 		options.extensionDir ?? EXTENSION_DIR,
 		"--name",
-		`agent:${input.id}`,
+		options.displayName ?? input.id,
 		// Agent sessions live in the agent's own directory so they never mix into the user's
 		// `/resume` list or `pi --continue` for this project.
 		"--session-dir",

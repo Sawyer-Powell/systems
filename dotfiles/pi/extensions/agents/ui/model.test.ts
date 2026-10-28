@@ -164,6 +164,10 @@ describe("transcript markers", () => {
 		const view = agentMessageView(text, { from: "worker.a.0001", kind: "yield" }, false);
 		assert.equal(view.header, "[from worker.a.0001 · yield]");
 		assert.equal(view.body.length, 6); assert.equal(view.hidden, 4);
+		const labeled = agentMessageText({ from: "worker.a.0001", kind: "info", id: "m2", body: "hello" }, "parent::child");
+		assert.equal(labeled, "[from parent::child (id: worker.a.0001) · info · m2]\nhello");
+		assert.equal(agentMessageView(labeled, { from: "worker.a.0001", fromName: "parent::child", kind: "info" }, false).header, "[from parent::child · info]");
+		assert.equal(claimLine("agents.result", { id: "worker.a.0001", name: "parent::child", status: "idle", summary: "ok" }), "◂ parent::child idle · ok");
 		assert.deepEqual(agentMessageView("plain", undefined, false).body, ["plain"]);
 	});
 });

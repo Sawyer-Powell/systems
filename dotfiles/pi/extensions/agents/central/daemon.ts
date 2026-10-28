@@ -14,6 +14,8 @@ import { processStartTime, stallOf, deliveryForParent } from "../store/store.ts"
 import { planYield } from "../store/handoff.ts";
 import { AGENT_STATUSES, SUMMARY_MAX_CHARS, type AgentMessage, MODEL_FIRST_EVENT_MS, MODEL_SILENCE_MS, OVERRUN_GRACE_MS } from "../store/types.ts";
 
+import { agentLabel } from "../names.ts";
+
 interface Live {
 	id: string; owner: Owner; child?: ChildProcess; bridge?: net.Socket;
 	attachments: Set<string>; unknownAttachment: boolean; settled: boolean;
@@ -139,7 +141,7 @@ export async function startDaemon(home = runtimeHome()) {
 		try {
 			fs.rmSync(store.ptySocket(id), { force: true });
 			const savedSession = store.readState(id)?.sessionFile;
-			const args = buildChildArgs(input, input.profile, { message: "", dir: store.dir(id), sessionFile: savedSession && fs.existsSync(savedSession) ? savedSession : undefined,
+			const args = buildChildArgs(input, input.profile, { message: "", displayName: agentLabel(store, id), dir: store.dir(id), sessionFile: savedSession && fs.existsSync(savedSession) ? savedSession : undefined,
 				headless: false, extraTools: agentToolNames(input.interactable, input.interactable && input.depth < (input.spawnDepthLimit ?? 3)) });
 			const command = process.env.PI_AGENTS_PI ?? "pi";
 			const fd = fs.openSync(store.logPath(id), "a", 0o600);

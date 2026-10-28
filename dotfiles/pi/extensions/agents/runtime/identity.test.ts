@@ -3,9 +3,21 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { mkInput, useTempStore } from "../test-support.ts";
-import { forkedFromOf } from "./identity.ts";
+import { createRootInput, forkedFromOf } from "./identity.ts";
 
 const t = useTempStore("agents-identity-");
+
+describe("root display identity", () => {
+	it("preserves an explicitly owner-qualified session name", () => {
+		const input = createRootInput(t.store, {
+			cwd: "/work", thinkingLevel: "off",
+			sessionManager: { getSessionId: () => "main.process.0001", getHeader: () => undefined, getSessionName: () => "parent::process" },
+		} as never);
+		assert.equal(input.name, "parent::process");
+		assert.equal(input.id, "main.process.0001");
+		assert.equal(input.parent, null, "process labels do not manufacture managed ancestry");
+	});
+});
 
 describe("forkedFromOf", () => {
 	const sessionFile = (id: string) => {

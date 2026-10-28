@@ -9,6 +9,7 @@
  * (already in this agent's context as a delivered message) appear here. Never tool output,
  * logs, or full summaries.
  */
+import { agentLabel } from "../names.ts";
 import { type Claim, reconcileClaims } from "./claims.ts";
 import { stallOf, type Store } from "./store.ts";
 import { type AgentRecord, isTerminal } from "./types.ts";
@@ -41,7 +42,7 @@ export function orientation(store: Store, selfId: string, now: number, claims: M
 	const tag = (id: string) => (otherBranch.has(id) ? " [other branch]" : "");
 	const recent = (record: AgentRecord) => record.state !== undefined && now - record.state.since < ORIENTATION_RECENT_MS;
 	const isLive = (record: AgentRecord) => record.alive || record.residency === "starting";
-	const head = (record: AgentRecord) => `${record.input.id} ${record.input.role}`;
+	const head = (record: AgentRecord) => `${agentLabel(store, record.input.id)} (id: ${record.input.id}) ${record.input.role}`;
 
 	const attention: string[] = [];
 	const live: string[] = [];
@@ -67,7 +68,7 @@ export function orientation(store: Store, selfId: string, now: number, claims: M
 			finished.push(`- ${head(child)} ${child.status}${summary}${tag(child.input.id)}`);
 		}
 	}
-	const lost = unknown.map((claim) => `? ${flat(claim.spawn.id, 40)} ${flat(claim.spawn.role, 20)} unknown (store lost)`);
+	const lost = unknown.map((claim) => `? ${flat(claim.spawn.name || claim.spawn.id, 80)} (id: ${claim.spawn.id}) ${flat(claim.spawn.role, 20)} unknown (store lost)`);
 
 	// Agents of the session this one was forked from: shown, never controllable from here.
 	const inherited = (self.forkedFrom ? store.descendants(self.forkedFrom) : [])

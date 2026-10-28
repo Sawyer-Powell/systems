@@ -77,8 +77,16 @@ message, interrupt, kill, explicit recovery, details, widget and lineage footer.
 Default triage: NEEDS YOU → BLOCKED → WORKING → WAITING ON PARENT → IDLE.
 Each bucket has explicit **Parent: name** headings; parent groups are ranked by their
 oldest/most urgent child, rows predictably ordered. Duplicate parent names include ID tails.
-Names are prominent first-column **parent::child::subchild** paths, derived from immutable
-lineage without changing IDs. Duplicate qualified names get only the ID tail needed to
+All agent display surfaces use **parent::child::subchild** lineage paths: picker,
+Attach tabs, native session names, tool results, snapshots, message headers, footers and
+notifications. `names.ts` owns derivation, with name/ID fallbacks for missing lineage.
+Immutable IDs remain machine addresses (`send_message.to`, `resume_agent.id`, leases,
+session IDs); model-facing output includes `id:` explicitly. No tool guesses a path target.
+Zellij labels are capped at 96 characters (keeping the leaf end), passed as literal argv,
+not shell text. Process labels use `owner::kind suggestion` (including explicit title
+leaves); processes are not managed agents and retain their handles. Old transcript claims
+without a captured label fall back to their stored name/ID. Names are prominent first-column
+paths, derived from immutable lineage without changing IDs. Duplicate qualified names get only the ID tail needed to
 separate them. Names take width priority over secondary columns (no34-character cap);
 selected detail wraps the complete name on narrow terminals. Headers are never selectable.
 Search flattens matches but keeps full qualified ownership visible. Leaf names, qualified

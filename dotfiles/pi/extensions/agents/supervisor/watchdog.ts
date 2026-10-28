@@ -5,6 +5,8 @@
 import type { AgentsHost } from "../host.ts";
 import { type AgentRecord, deliveryForParent, type StallKind, type StallReport, stallOf, type Store } from "../store/index.ts";
 
+import { agentName } from "../names.ts";
+
 const SCAN_MS = 15_000;
 
 interface NewStall {
@@ -40,8 +42,8 @@ export function newStalls(records: AgentRecord[], reported: Set<string>, now: nu
  * in flight cannot take a message until it ends, and an interrupt discards it, so waiting is the
  * default; only a silence of several minutes (or kind other than "stall") warrants intervening.
  */
-export function stallBody(child: AgentRecord, report: StallReport): string {
-	const head = `STALLED CHILD ${child.input.name} (${child.input.id}): ${report.kind}, ${report.detail}. This is about your child, not about you.`;
+export function stallBody(child: AgentRecord, report: StallReport, ancestors: AgentRecord[] = []): string {
+	const head = `STALLED CHILD ${agentName(child.input, ancestors)} (${child.input.id}): ${report.kind}, ${report.detail}. This is about your child, not about you.`;
 	const hint =
 		report.kind === "stall"
 			? " A model request in flight does not receive messages until it ends, and an interrupt discards it; prefer waiting unless the silence keeps growing."
@@ -58,7 +60,7 @@ export function scan(store: Store, selfId: string, reported: Set<string>, now = 
 				from: child.input.id,
 				to: selfId,
 				kind: "stall",
-				body: stallBody(child, report),
+				body: stallBody(child, report, store.ancestors(child.input.id)),
 				deliver: deliveryForParent(store, selfId),
 			});
 			sent.push(`${child.input.id}:${report.kind}`);
@@ -70,8 +72,8 @@ export function scan(store: Store, selfId: string, reported: Set<string>, now = 
 }
 
 /** What the user sees for a stall anywhere in the root's tree. */
-export const stallNotice = ({ record, report }: NewStall): string =>
-	`${record.input.name}·${record.input.id.slice(-4)} (${record.input.role}): ${report.kind}, ${report.detail}. Open /agents to ${report.kind === "lost" ? "resume" : "interrupt"}.`;
+export const stallNotice = ({ record, report }: NewStall, ancestors: AgentRecord[] = []): string =>
+	`${agentName(record.input, ancestors)}·${record.input.id.slice(-4)} (${record.input.role}): ${report.kind}, ${report.detail}. Open /agents to ${report.kind === "lost" ? "resume" : "interrupt"}.`;
 
 /**
  * Root only: stalls deeper in the tree than its direct children, as one-line UI notices. The
@@ -81,7 +83,7 @@ export const stallNotice = ({ record, report }: NewStall): string =>
  */
 export function treeNotices(store: Store, rootId: string, reported: Set<string>, now = Date.now()): string[] {
 	const deeper = store.descendants(rootId).filter((record) => record.input.parent !== rootId);
-	return newStalls(deeper, reported, now).map(stallNotice);
+	return newStalls(deeper, reported, now).map(stall => stallNotice(stall, store.ancestors(stall.record.input.id)));
 }
 
 export function startWatchdog(host: AgentsHost): () => void {

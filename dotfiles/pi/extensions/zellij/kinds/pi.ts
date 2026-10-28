@@ -97,7 +97,10 @@ class RpcConnection {
 		timer?: NodeJS.Timeout;
 	}> = [];
 
-	private constructor(private readonly socket: net.Socket) {
+	private readonly socket: net.Socket;
+
+	private constructor(socket: net.Socket) {
+		this.socket = socket;
 		socket.setEncoding("utf8");
 		socket.on("data", (chunk: string) => this.onData(chunk));
 		socket.on("error", (error) => this.fail(error));
@@ -320,6 +323,13 @@ export function createPiKind(): ProcessKind {
 				name: `pi: ${label}`,
 				cwd,
 			};
+		},
+
+		setDisplayName(spec, name) {
+			const separator = spec.argv.indexOf("--");
+			const at = spec.argv.indexOf("--name");
+			if (at >= 0 && (separator < 0 || at < separator)) spec.argv[at + 1] = name;
+			else spec.argv.splice(separator < 0 ? spec.argv.length : separator, 0, "--name", name);
 		},
 
 		spawnNote(record: ProcessRecord): string {

@@ -88,6 +88,8 @@ export interface ProcessKind {
 	 * no channel: return an empty `runtime` and skip anything transport-shaped.
 	 */
 	spawn(config: Record<string, unknown>, cwd: string, relation: ProcessRelation): SpawnSpec;
+	/** Apply the owner-qualified display label to a native program's title, if supported. */
+	setDisplayName?(spec: SpawnSpec, name: string): void;
 	/**
 	 * Optional one-line note about a process that now exists, for both relations
 	 * (e.g. the session id it was started with). No I/O: `spawn` has already

@@ -182,12 +182,14 @@ export const AGENT_MESSAGE = "agent_message";
 /** `details` of a delivered `agent_message` (not sent to the model). */
 export interface AgentMessageDetails {
 	from: string;
+	/** Display-only; from remains the machine sender. */
+	fromName?: string;
 	kind: string;
 	id: string;
 	inReplyTo?: string;
 }
 
 /** The text the model sees for a delivered message: sender and kind, then the body. */
-export function agentMessageText(message: Pick<AgentMessage, "from" | "kind" | "id" | "body">): string {
-	return `[from ${message.from} · ${message.kind} · ${message.id}]\n${message.body}`;
+export function agentMessageText(message: Pick<AgentMessage, "from" | "kind" | "id" | "body">, fromName = message.from): string {
+	return `[from ${fromName}${fromName !== message.from ? ` (id: ${message.from})` : ""} · ${message.kind} · ${message.id}]\n${message.body}`;
 }

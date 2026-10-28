@@ -16,7 +16,8 @@ cat > "$cfg" <<JSON
     "paths": {
       "@earendil-works/pi-coding-agent": ["$pkg/dist/index.d.ts"],
       "@earendil-works/pi-tui": ["$nm/@earendil-works/pi-tui/dist/index.d.ts"],
-      "typebox": ["$nm/typebox/build/index.d.mts"]
+      "typebox": ["$nm/typebox/build/index.d.mts"],
+      "typebox/value": ["$nm/typebox/build/value/index.d.mts"]
     },
     "types": ["node"], "typeRoots": ["$nm/@types"],
     "allowImportingTsExtensions": true, "noEmit": true, "skipLibCheck": true, "strict": true

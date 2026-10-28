@@ -31,8 +31,8 @@ describe("orientation", () => {
 		live("worker.ask.0003", { status: "waiting-on-parent", waitingOn: { messageId: question.id } });
 		const text = orientation(tmp.store, ME, now, claimsFor("worker.live.0002", "worker.ask.0003"))!;
 		const lines = text.split("\n");
-		assert.equal(lines[2], '! worker.ask.0003 worker is waiting on you: "which database?"');
-		assert.equal(lines[3], "- worker.live.0002 worker working · tests running · build the thing");
+		assert.equal(lines[2], '! main.me.0001::worker.ask.0003 (id: worker.ask.0003) worker is waiting on you: "which database?"');
+		assert.equal(lines[3], "- main.me.0001::worker.live.0002 (id: worker.live.0002) worker working · tests running · build the thing");
 	});
 	it("flags stalled and lost children and tags children not claimed on this branch", () => {
 		tmp.store.create(mkInput("worker.lost.0002", ME));
@@ -40,15 +40,15 @@ describe("orientation", () => {
 		tmp.store.create(mkInput("worker.wedged.0003", ME));
 		live("worker.wedged.0003", { activity: { lastEventAt: 0, lastSeenAt: 0 } });
 		const lines = orientation(tmp.store, ME, now, claimsFor("worker.lost.0002"))!.split("\n").slice(2);
-		assert.deepEqual(lines, ["! worker.lost.0002 worker blocked · Execution unavailable", "! worker.wedged.0003 worker wedged [other branch]"]);
+		assert.deepEqual(lines, ["! main.me.0001::worker.lost.0002 (id: worker.lost.0002) worker blocked · Execution unavailable", "! main.me.0001::worker.wedged.0003 (id: worker.wedged.0003) worker wedged [other branch]"]);
 	});
 	it("lists recently finished children with a 60-char summary, and claims whose record is gone", () => {
 		tmp.store.create(mkInput("scout.fin.0002", ME));
 		tmp.store.writeState("scout.fin.0002", { status: "idle", summary: `found\n${"x".repeat(100)}`, handoff: { to: "parent", recipient: ME, messageId: "handoff-1", at: now - 60_000 }, since: now - 60_000 });
 		const claims = claimsFor("scout.fin.0002", "worker.gone.0003");
 		const lines = orientation(tmp.store, ME, now, claims)!.split("\n").slice(2);
-		assert.equal(lines[0], `- scout.fin.0002 scout idle · found ${"x".repeat(60 - 6 - 1)}…`);
-		assert.equal(lines[1], "? worker.gone.0003 worker unknown (store lost)");
+		assert.equal(lines[0], `- main.me.0001::scout.fin.0002 (id: scout.fin.0002) scout idle · found ${"x".repeat(60 - 6 - 1)}…`);
+		assert.equal(lines[1], "? worker.gone.0003 (id: worker.gone.0003) worker unknown (store lost)");
 		const finishedGone = claimsFromBranch([...claims.values()].flatMap((c) => [{ type: "custom", customType: SPAWN_ENTRY, data: c.spawn }, { type: "custom", customType: RESULT_ENTRY, data: resultClaim(c.spawn.id, "idle", "ok", 2) }]));
 		assert.ok(!orientation(tmp.store, ME, now, finishedGone)!.includes("unknown"));
 	});
@@ -59,8 +59,8 @@ describe("orientation", () => {
 		tmp.store.create(mkInput("main.fork.0011", null, { role: "main", forkedFrom: "main.parent.0009" }));
 		const forked = claimsFor("worker.inh.0010"); // a clone carries its parent's claims
 		assert.equal(orientation(tmp.store, "main.fork.0011", now, forked)!.split("\n").length, 3); // not "unknown", not "other branch"
-		assert.equal(orientation(tmp.store, "main.fork.0011", now, new Map())!.split("\n")[2], "- [inherited, read-only] worker.inh.0010 worker working · inherited work");
-		assert.equal(orientation(tmp.store, "main.parent.0009", now, new Map())!.split("\n")[2], "- worker.inh.0010 worker working · inherited work [other branch]");
+		assert.equal(orientation(tmp.store, "main.fork.0011", now, new Map())!.split("\n")[2], "- [inherited, read-only] main.parent.0009::worker.inh.0010 (id: worker.inh.0010) worker working · inherited work");
+		assert.equal(orientation(tmp.store, "main.parent.0009", now, new Map())!.split("\n")[2], "- main.parent.0009::worker.inh.0010 (id: worker.inh.0010) worker working · inherited work [other branch]");
 	});
 	it("caps the block at 12 lines and points at list_agents", () => {
 		for (let i = 0; i < 15; i++) {

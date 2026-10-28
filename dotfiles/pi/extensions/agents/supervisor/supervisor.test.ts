@@ -13,11 +13,11 @@ const profile = { name: "worker", modelId: "claude-x", provider: "anthropic", th
 describe("buildChildArgs", () => {
 	it("compiles to pi's CLI with the message last behind --", () => {
 		const written: Record<string, string> = {};
-		const args = buildChildArgs({ id: "worker.a.0001" }, profile, { message: "-x do it", dir: "/d", headless: false, extraTools: ["ask_parent"], extensionDir: "/ext" }, (name, text) => {
+		const args = buildChildArgs({ id: "worker.a.0001" }, profile, { message: "-x do it", displayName: "parent::child", dir: "/d", headless: false, extraTools: ["ask_parent"], extensionDir: "/ext" }, (name, text) => {
 			written[name] = text;
 			return `/tmp/${name}.md`;
 		});
-		assert.deepEqual(args.slice(0, 5), ["--no-extensions", "-e", "/ext", "--name", "agent:worker.a.0001"]);
+		assert.deepEqual(args.slice(0, 5), ["--no-extensions", "-e", "/ext", "--name", "parent::child"]);
 		assert.ok(args.includes("--session-id") && args.includes("worker.a.0001"));
 		assert.deepEqual(args.slice(args.indexOf("--session-dir"), args.indexOf("--session-dir") + 2), ["--session-dir", "/d/sessions"]);
 		assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2), ["--tools", "read,bash,ask_parent"]);
@@ -107,7 +107,7 @@ describe("watchdog scan", () => {
 		const [msg] = tmp.store.readInbox("main.root.0001");
 		assert.equal(msg?.kind, "stall");
 		assert.equal(msg?.deliver, "ui");
-		assert.match(msg!.body, /^STALLED CHILD worker\.a\.0002 \(worker\.a\.0002\): stall, .*This is about your child, not about you\./);
+		assert.match(msg!.body, /^STALLED CHILD main\.root\.0001::worker\.a\.0002 \(worker\.a\.0002\): stall, .*This is about your child, not about you\./);
 		tmp.store.writeState("worker.a.0002", { activity: { lastEventAt: 200_500, lastSeenAt: 201_500 } });
 		assert.deepEqual(scan(tmp.store, "main.root.0001", reported, 202_000), []);
 		assert.equal(reported.size, 0);
@@ -149,7 +149,7 @@ describe("stall visibility for the user", () => {
 		const reported = new Set<string>();
 		const [line, ...rest] = treeNotices(tmp.store, "main.root.0001", reported, 200_000);
 		assert.equal(rest.length, 0);
-		assert.match(line!, /^b·0003 \(w\): stall, .+\. Open \/agents to interrupt\.$/);
+		assert.match(line!, /^root::a::b·0003 \(w\): stall, .+\. Open \/agents to interrupt\.$/);
 		assert.deepEqual(treeNotices(tmp.store, "main.root.0001", reported, 201_000), []);
 		assert.deepEqual(tmp.store.readInbox("main.root.0001"), []);
 		assert.deepEqual(tmp.store.readInbox("worker.a.0002"), []);
@@ -165,7 +165,7 @@ describe("stall visibility for the user", () => {
 	});
 	it("formats the notice", () => {
 		const record = tmp.store.record("worker.b.0003")!;
-		assert.equal(stallNotice({ record, report: { kind: "wedged", overMs: 1, detail: "heartbeat stopped" } }), "b·0003 (w): wedged, heartbeat stopped. Open /agents to interrupt.");
+		assert.equal(stallNotice({ record, report: { kind: "wedged", overMs: 1, detail: "heartbeat stopped" } }), "worker.a.0002::b·0003 (w): wedged, heartbeat stopped. Open /agents to interrupt.");
 	});
 });
 

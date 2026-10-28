@@ -10,14 +10,16 @@ import { selfId } from "../host.ts";
 import { type AgentRecord, type MessageKind, normalizeNote, SPAWN_ENTRY, spawnClaim } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 
+import { agentLabel, agentName } from "../names.ts";
+
 type Result = { content: { type: "text"; text: string }[]; details: undefined };
 const text = (value: string): Result => ({ content: [{ type: "text", text: value }], details: undefined });
 
 const SUMMARY_WIDTH = 60;
 
-export function describeRecord(record: AgentRecord, now = Date.now()): string {
+export function describeRecord(record: AgentRecord, now = Date.now(), name = agentName(record.input)): string {
 	const state = record.state;
-	const bits = [record.input.id, record.input.role, record.status];
+	const bits = [`${name} (id: ${record.input.id})`, record.input.role, record.status];
 	if (state && (record.status === "working" || record.status === "idle")) {
 		const quiet = Math.round((now - state.activity.lastEventAt) / 1000);
 		const step = state.activity.inFlight;
@@ -78,7 +80,7 @@ function registerMessaging(pi: ExtensionAPI, host: AgentsHost) {
 			};
 			await host.connection?.flush();
 			const message = host.connection ? await host.connection.request("send", { message: partial }) : store.send(partial);
-			return text(`Sent ${kind} ${message.id} to ${to}.${message.deferred ? ` Delivery deferred (${message.deferred}); explicit restore/recovery/reconnect is required.` : ""}`);
+			return text(`Sent ${kind} ${message.id} to ${agentLabel(store, to)} (id: ${to}).${message.deferred ? ` Delivery deferred (${message.deferred}); explicit restore/recovery/reconnect is required.` : ""}`);
 		},
 	});
 }
@@ -175,11 +177,11 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 				stepTimeoutMs: params.step_timeout_seconds ? params.step_timeout_seconds * 1000 : undefined,
 				runTimeoutMs: params.run_timeout_seconds ? params.run_timeout_seconds * 1000 : undefined,
 			});
-			pi.appendEntry(SPAWN_ENTRY, spawnClaim(input, Date.now())); // this branch's claim; the store stays the authority
+			pi.appendEntry(SPAWN_ENTRY, { ...spawnClaim(input, Date.now()), name: agentLabel(store, input.id) }); // this branch's claim; the store stays the authority
 			const how = input.interactable ? "Attach with /agents." : "It runs headless and reports back.";
 			const tools = input.profile.tools;
 			const toolNote = tools ? ` Tools: ${tools.join(", ")}${tools.includes("bash") ? "" : " (no shell: it cannot run commands such as jj/git/pytest)"}.` : "";
-			return text(`Started ${input.id} (${input.role}). ${how}${toolNote} Do not wait for it.`);
+			return text(`Started ${agentLabel(store, input.id)} (id: ${input.id}; ${input.role}). ${how}${toolNote} Do not wait for it.`);
 		},
 	});
 
@@ -191,7 +193,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		async execute(_id, params) {
 			owned(params.id);
 			await supervisor.resume(params.id, params.instruction);
-			return text(`Resumed ${params.id}.`);
+			return text(`Resumed ${agentLabel(store, params.id)} (id: ${params.id}).`);
 		},
 	});
 
@@ -203,7 +205,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		async execute(_id, params) {
 			owned(params.id);
 			await supervisor.signal(params.id, "interrupt");
-			return text(`Interrupt sent to ${params.id}.`);
+			return text(`Interrupt sent to ${agentLabel(store, params.id)} (id: ${params.id}).`);
 		},
 	});
 
@@ -215,7 +217,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		async execute(_id, params) {
 			owned(params.id);
 			await supervisor.signal(params.id, "kill");
-			return text(`Killed ${params.id}.`);
+			return text(`Killed ${agentLabel(store, params.id)} (id: ${params.id}).`);
 		},
 	});
 
@@ -227,7 +229,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		async execute(_id, params) {
 			owned(params.id);
 			await supervisor.redrive(params.id, params.note);
-			return text(`Redriven ${params.id}.`);
+			return text(`Redriven ${agentLabel(store, params.id)} (id: ${params.id}).`);
 		},
 	});
 
@@ -244,7 +246,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 				if (!host.connection) throw new Error("Archive/restore requires the central runtime");
 				await host.connection.flush();
 				await host.connection.request(operation, { id: params.id, actor });
-				return text(`${operation === "archive" ? "Archived" : "Restored"} ${params.id}.`);
+				return text(`${operation === "archive" ? "Archived" : "Restored"} ${agentLabel(store, params.id)} (id: ${params.id}).`);
 			},
 		});
 	}
@@ -256,7 +258,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		parameters: Type.Object({ include_archived: Type.Optional(Type.Boolean()) }),
 		async execute(_id, params) {
 			const me = selfId(host);
-			const lines = store.descendants(me).filter(record => params.include_archived || record.status !== "archived").map(record => describeRecord(record));
+			const lines = store.descendants(me).filter(record => params.include_archived || record.status !== "archived").map(record => describeRecord(record, Date.now(), agentLabel(store, record.input.id)));
 			const profiles = supervisor
 				.profiles()
 				.map((p) => `${p.name}${p.interactable ? " (interactable)" : ""}: ${p.description}`);

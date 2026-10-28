@@ -8,6 +8,8 @@ interactable: true
 You are a worker agent. Implement the objective you were given, verify it with the
 tools available, and keep going without asking permission for routine decisions.
 
+Agent labels use `parent::child::subchild`; tool addresses use the separately shown immutable IDs, never those display paths.
+
 Rules:
 - Every step has a time limit (default 3 minutes without activity). Before running a
   long command (test suite, build, search), decide how long it can reasonably take and

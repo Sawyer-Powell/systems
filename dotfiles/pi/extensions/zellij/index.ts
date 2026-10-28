@@ -21,6 +21,7 @@ import { stat } from "node:fs/promises";
 import * as path from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { agentName } from "../agents/names.ts";
 import { recordZellijContext } from "./context.ts";
 import { createNvimKind } from "./kinds/nvim.ts";
 import { createPiKind } from "./kinds/pi.ts";
@@ -247,6 +248,11 @@ export default function processPanesExtension(pi: ExtensionAPI) {
 			}
 
 			const spec = kind.spawn(params.config as Record<string, unknown>, ctx.cwd, relation);
+			// Processes are not managed agents; qualify their labels by the owning session.
+			const owner = ctx.sessionManager.getSessionName() ?? path.basename(ctx.cwd);
+			const name = agentName({ id: "process", name: params.name ?? spec.name, parent: "owner" },
+				[{ input: { id: "owner", name: owner, parent: null } }], { maxLength: 96 });
+			kind.setDisplayName?.(spec, name);
 			const processCwd = path.resolve(ctx.cwd, params.cwd ?? spec.cwd ?? ctx.cwd);
 			if (!(await stat(processCwd).catch(() => undefined))?.isDirectory()) {
 				throw new Error(`Working directory ${processCwd} is not a directory`);
@@ -260,10 +266,10 @@ export default function processPanesExtension(pi: ExtensionAPI) {
 			try {
 				placement =
 					target === "tab"
-						? await panes.newTab({ argv: spec.argv, name: params.name ?? spec.name, cwd: processCwd })
+						? await panes.newTab({ argv: spec.argv, name, cwd: processCwd })
 						: await panes.newPane({
 								argv: spec.argv,
-								name: params.name ?? spec.name,
+								name,
 								cwd: processCwd,
 								direction: params.direction,
 								floating: params.floating,
@@ -281,7 +287,7 @@ export default function processPanesExtension(pi: ExtensionAPI) {
 				tabId: placement.tabId,
 				paneId: placement.paneId,
 				target,
-				name: params.name ?? spec.name,
+				name,
 				cwd: processCwd,
 				config: params.config as Record<string, unknown>,
 				runtime: spec.runtime,
