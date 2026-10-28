@@ -71,6 +71,13 @@ describe("liveness", () => {
 		tmp.store.writeState("main.a.0001", { status: "done" });
 		assert.equal(tmp.store.record("main.a.0001")?.status, "done");
 	});
+	it("a dormant root with no process stays dormant, never lost, and is never reported as stalled", () => {
+		tmp.store.create(mkInput("main.a.0001", null));
+		tmp.store.writeState("main.a.0001", { status: "dormant", activity: { lastEventAt: 0, lastSeenAt: 0 } });
+		const record = tmp.store.record("main.a.0001")!;
+		assert.equal(record.status, "dormant");
+		assert.equal(stallOf(record, Date.now() + 3_600_000), undefined);
+	});
 	it("refuses a second live owner, takes over a dead one", () => {
 		tmp.store.create(mkInput("main.a.0001", null));
 		tmp.store.acquireLock("main.a.0001", process.ppid); // another live process
@@ -172,6 +179,49 @@ describe("stallOf", () => {
 		tmp.store.writeState("main.a.0001", { activity: { lastSeenAt: t0 + 606_000 } });
 		assert.equal(stall("main.a.0001", t0 + 604_000), undefined); // within the kill grace
 		assert.equal(stall("main.a.0001", t0 + 606_000)?.kind, "overrun");
+	});
+	describe("model requests", () => {
+		const model = (deadline?: number) => ({ kind: "model" as const, name: "request", summary: "model request", startedAt: t0, ...(deadline !== undefined ? { deadline } : {}) });
+		const working = (inFlight: ReturnType<typeof model>, lastEventAt: number, lastSeenAt: number) => {
+			start("main.a.0001");
+			tmp.store.writeState("main.a.0001", { status: "working", activity: { lastEventAt, lastSeenAt, inFlight } });
+		};
+		it("a request that has produced events stalls after 120 s without provider events", () => {
+			working(model(), t0 + 1_000, t0 + 125_000);
+			assert.equal(stall("main.a.0001", t0 + 120_000), undefined);
+			assert.equal(stall("main.a.0001", t0 + 122_000)?.kind, "stall");
+		});
+		it("provider events keep a model request alive past 120 s", () => {
+			working(model(), t0 + 200_000, t0 + 320_000);
+			assert.equal(stall("main.a.0001", t0 + 320_000), undefined); // 120 s since the last event, request 320 s old
+			assert.equal(stall("main.a.0001", t0 + 322_000)?.kind, "stall");
+		});
+		it("a request still waiting for its first event gets 10 min, and the detail separates age from silence", () => {
+			working(model(), t0, t0 + 599_000);
+			assert.equal(stall("main.a.0001", t0 + 599_000), undefined);
+			const report = stall("main.a.0001", t0 + 601_000);
+			assert.equal(report?.kind, "stall");
+			assert.match(report!.detail, /in flight 601s, no events for the last 601s/);
+		});
+		it("never exceeds a step timeout shorter than the silence limit", () => {
+			start("main.a.0001", { stepTimeoutMs: 10_000 });
+			tmp.store.writeState("main.a.0001", { status: "working", activity: { lastEventAt: t0, lastSeenAt: t0 + 15_000, inFlight: model() } });
+			assert.equal(stall("main.a.0001", t0 + 11_000)?.kind, "stall");
+		});
+		it("a silent tool still gets the full step timeout", () => {
+			start("main.a.0001");
+			tmp.store.writeState("main.a.0001", { status: "working", activity: { lastEventAt: t0, lastSeenAt: t0 + 60_000, inFlight: { kind: "tool", name: "bash", summary: "bash: x", startedAt: t0 } } });
+			assert.equal(stall("main.a.0001", t0 + 60_000), undefined);
+		});
+		it("with a first-token deadline it does not stall before the deadline", () => {
+			working(model(t0 + 600_000), t0, t0 + 590_000);
+			assert.equal(stall("main.a.0001", t0 + 590_000), undefined);
+		});
+		it("once streaming started (deadline cleared) a silent stream stalls after 120 s", () => {
+			working(model(), t0 + 5_000, t0 + 125_000);
+			assert.equal(stall("main.a.0001", t0 + 124_000), undefined); // 119 s of silence
+			assert.equal(stall("main.a.0001", t0 + 126_000)?.kind, "stall");
+		});
 	});
 	it("flags wedged (heartbeat stopped, process alive)", () => {
 		start("main.a.0001");

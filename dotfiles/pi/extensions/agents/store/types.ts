@@ -39,12 +39,18 @@ export interface AgentInput {
 	runTimeoutMs?: number;
 	depth: number;
 	createdAt: number;
+	/**
+	 * Roots only: the agent (root) owning the pi session this one was forked/cloned from.
+	 * Agents owned by it are inherited, read-only: listed, never controllable from here.
+	 */
+	forkedFrom?: string;
 }
 
 export type AgentStatus =
 	| "starting"
 	| "idle" // alive, no run in progress, waiting for messages
 	| "working"
+	| "dormant" // root whose session is not loaded in any pi; not terminal, its mailbox keeps accumulating
 	| "waiting-on-parent"
 	| "waiting-on-user"
 	| "done"
@@ -104,7 +110,7 @@ export type MessageKind =
 	| "control" // interrupt | stop
 	| "info"; // anything else, e.g. review comments
 
-export type ControlAction = "interrupt" | "stop";
+export type ControlAction = "interrupt" | "stop" | "done"; // done: wrap up, report, mark yourself done (`/agent-done`)
 
 export interface AgentMessage {
 	/** Sortable: `<13-digit ms timestamp>-<random>`. Also the filename stem. */
@@ -149,11 +155,22 @@ export const ERROR_MAX_CHARS = 500;
 export const HEARTBEAT_MS = 15_000;
 /** A freshly launched agent has no lock yet; it is "starting", not "lost", for this long. */
 export const STARTING_GRACE_MS = 30_000;
-/** A model request legitimately goes quiet while the model thinks; it gets a long fixed deadline. */
+/** First-token deadline of a model request, only for thinking levels xhigh/max; cleared on the first stream event. */
 export const MODEL_REQUEST_DEADLINE_MS = 600_000;
 /** Time given to a tool to die after its declared deadline before it counts as an overrun. */
 export const OVERRUN_GRACE_MS = 5_000;
 export const DEFAULT_STEP_TIMEOUT_MS = 180_000;
+/**
+ * A model request with no first-token deadline (thinking below xhigh/max) that has produced no provider
+ * event (thinking, text, tool call, or any other stream event) for this long is stalled, even though the
+ * step timeout is longer. Thinking arrives in chunks, so this must exceed normal gaps. Tools keep the step timeout.
+ */
+export const MODEL_SILENCE_MS = 120_000;
+/**
+ * A model request that has produced no event at all since it started (not even the response headers) is
+ * waiting for its first token, which is legitimately minutes on very large prompts. Silence this long is a stall.
+ */
+export const MODEL_FIRST_EVENT_MS = 600_000;
 export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
 /** A live process whose heartbeat is older than this is considered wedged. */
 export const WEDGED_AFTER_MS = HEARTBEAT_MS * 4;
@@ -163,4 +180,20 @@ export function normalizeNote(raw: string): string {
 	const flat = raw.replace(/\s+/g, " ").trim();
 	const chars = [...flat];
 	return chars.length > NOTE_MAX_CHARS ? `${chars.slice(0, NOTE_MAX_CHARS - 1).join("")}…` : flat;
+}
+
+/** Custom message type for mailbox messages delivered into the model's context. */
+export const AGENT_MESSAGE = "agent_message";
+
+/** `details` of a delivered `agent_message` (not sent to the model). */
+export interface AgentMessageDetails {
+	from: string;
+	kind: string;
+	id: string;
+	inReplyTo?: string;
+}
+
+/** The text the model sees for a delivered message: sender and kind, then the body. */
+export function agentMessageText(message: Pick<AgentMessage, "from" | "kind" | "id" | "body">): string {
+	return `[from ${message.from} · ${message.kind} · ${message.id}]\n${message.body}`;
 }

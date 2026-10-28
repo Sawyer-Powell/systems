@@ -86,8 +86,8 @@ interface LaunchPlan {
 	cwd: string;
 }
 
-export function childEnv(base: NodeJS.ProcessEnv, id: string, home: string): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...base, PI_AGENT_ID: id, PI_AGENTS_HOME: home };
+export function childEnv(base: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...base, PI_AGENTS_HOME: home };
 	delete env.PI_SESSION_ID;
 	delete env.PI_SESSION_FILE;
 	return env;
@@ -99,7 +99,7 @@ export function planLaunch(
 	opts: { home: string; ptySocket: string; baseEnv?: NodeJS.ProcessEnv; dtach?: string },
 ): LaunchPlan {
 	const pi = piInvocation(args);
-	const env = childEnv(opts.baseEnv ?? process.env, input.id, opts.home);
+	const env = childEnv(opts.baseEnv ?? process.env, opts.home);
 	if (!input.interactable) return { command: pi.command, args: pi.args, env, cwd: input.cwd };
 	if (opts.ptySocket.length > MAX_SOCKET_PATH) {
 		throw new Error(`PTY socket path too long (${opts.ptySocket.length} > ${MAX_SOCKET_PATH}): ${opts.ptySocket}`);

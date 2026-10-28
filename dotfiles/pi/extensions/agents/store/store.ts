@@ -16,6 +16,8 @@ import {
 	type EffectiveStatus,
 	OVERRUN_GRACE_MS,
 	STARTING_GRACE_MS,
+	MODEL_FIRST_EVENT_MS,
+	MODEL_SILENCE_MS,
 	type StallReport,
 	isTerminal,
 	WEDGED_AFTER_MS,
@@ -330,7 +332,7 @@ export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() ||
  */
 export function stallOf(record: AgentRecord, now = Date.now()): StallReport | undefined {
 	const { input, state, status } = record;
-	if (!state || isTerminal(status)) return undefined;
+	if (!state || isTerminal(status) || status === "dormant") return undefined;
 	if (status === "lost") {
 		return { kind: "lost", overMs: now - state.activity.lastSeenAt, detail: `process gone while ${state.status}` };
 	}
@@ -365,12 +367,18 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 	}
 	if (inFlight?.deadline === undefined) {
 		const since = Math.max(lastEventAt, inFlight?.startedAt ?? 0);
-		if (now - since > input.stepTimeoutMs) {
+		// A silent model stream is a hang far sooner than a quiet tool is; never exceed the configured step timeout.
+		// Before any event since the request started it is waiting for its first token (slow on huge prompts); a step timeout
+		// shorter than the silence limit still wins.
+		const waitingForFirstEvent = inFlight?.kind === "model" && lastEventAt <= inFlight.startedAt;
+		const modelLimit = waitingForFirstEvent ? MODEL_FIRST_EVENT_MS : MODEL_SILENCE_MS;
+		const limit = inFlight?.kind === "model" ? (input.stepTimeoutMs < MODEL_SILENCE_MS ? input.stepTimeoutMs : modelLimit) : input.stepTimeoutMs;
+		if (now - since > limit) {
 			return {
 				kind: "stall",
-				overMs: now - since - input.stepTimeoutMs,
+				overMs: now - since - limit,
 				detail: inFlight
-					? `${inFlight.kind} ${inFlight.name} running ${Math.round((now - inFlight.startedAt) / 1000)}s with no events`
+					? `${inFlight.kind} ${inFlight.name} in flight ${Math.round((now - inFlight.startedAt) / 1000)}s, no events for the last ${Math.round((now - since) / 1000)}s`
 					: `no events for ${Math.round((now - lastEventAt) / 1000)}s`,
 			};
 		}
@@ -378,11 +386,11 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 	return undefined;
 }
 
-/** Dead and not terminal means lost, except just after launch when the lock does not exist yet. */
+/** Dead and not terminal means lost, except a dormant root (expected to be unloaded) and just after launch when the lock does not exist yet. */
 function statusOf(state: AgentState | undefined, alive: boolean, now = Date.now()): EffectiveStatus {
 	if (!state) return "lost";
 	if (isTerminal(state.status)) return state.status;
-	if (alive) return state.status;
+	if (alive || state.status === "dormant") return state.status;
 	if (state.status === "starting" && now - state.since < STARTING_GRACE_MS) return "starting";
 	return "lost";
 }

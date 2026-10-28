@@ -7,7 +7,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentsHost } from "../host.ts";
 import { selfId } from "../host.ts";
-import { type AgentRecord, deliveryForParent, ERROR_MAX_CHARS, type MessageKind, normalizeNote, SUMMARY_MAX_CHARS } from "../store/index.ts";
+import { type AgentRecord, deliveryForParent, ERROR_MAX_CHARS, type MessageKind, normalizeNote, SPAWN_ENTRY, spawnClaim, SUMMARY_MAX_CHARS } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 
 type Result = { content: { type: "text"; text: string }[]; details: undefined };
@@ -31,18 +31,16 @@ export function describeRecord(record: AgentRecord, now = Date.now()): string {
 
 export function registerTools(host: AgentsHost, supervisor: Supervisor): void {
 	const { pi } = host;
-	const isChild = host.launched !== undefined && host.launched.parent !== null;
 
-	registerMessaging(pi, host);
-	if (isChild) registerReporting(pi, host);
-
-	// Spawn rights depend on settings (maxDepth), readable only once the session
-	// exists, so these tools are registered on session_start, once per runtime.
-	let controlRegistered = false;
+	// Which tools exist depends on who we are (child or root, spawn rights), known only once
+	// the session exists, so these are registered on session_start, once per runtime.
+	let registered = false;
 	pi.on("session_start", () => {
-		if (controlRegistered || !host.canSpawn) return;
-		controlRegistered = true;
-		registerControl(pi, host, supervisor);
+		if (registered || !host.identity) return;
+		registered = true;
+		registerMessaging(pi, host); // not for sessions that are not agents (print/rpc one-offs)
+		if (host.identity.parent) registerReporting(pi, host);
+		if (host.canSpawn) registerControl(pi, host, supervisor);
 	});
 }
 
@@ -88,7 +86,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		name: "ask_parent",
 		label: "Ask Parent",
 		description:
-			"Ask your parent agent a question. Non-blocking: after calling this, end your turn. The answer arrives later as a message.",
+			"Ask your parent agent a question that only it can answer. Non-blocking: after calling this, end your turn. The answer arrives later as a message. Do NOT use this for progress or status updates; use set_status for that.",
 		parameters: Type.Object({ question: Type.String({ description: "The question." }) }),
 		async execute(_id, params) {
 			const me = selfId(host);
@@ -100,7 +98,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		},
 	});
 
-	if (host.interactable) {
+	if (host.identity?.interactable) {
 		pi.registerTool({
 			name: "ask_user",
 			label: "Ask User",
@@ -178,6 +176,7 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 				stepTimeoutMs: params.step_timeout_seconds ? params.step_timeout_seconds * 1000 : undefined,
 				runTimeoutMs: params.run_timeout_seconds ? params.run_timeout_seconds * 1000 : undefined,
 			});
+			pi.appendEntry(SPAWN_ENTRY, spawnClaim(input, Date.now())); // this branch's claim; the store stays the authority
 			const how = input.interactable ? "Attach with /agents." : "It runs headless and reports back.";
 			const tools = input.profile.tools;
 			const toolNote = tools ? ` Tools: ${tools.join(", ")}${tools.includes("bash") ? "" : " (no shell: it cannot run commands such as jj/git/pytest)"}.` : "";

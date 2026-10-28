@@ -1,14 +1,18 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentInput, Store } from "../store/index.ts";
-import { DEFAULT_STEP_TIMEOUT_MS, newId } from "../store/index.ts";
+import { DEFAULT_STEP_TIMEOUT_MS } from "../store/index.ts";
 
-/** Create the root agent record for a user's interactive pi. */
+/**
+ * Create the root agent record for a user's interactive pi. The agent id is the pi
+ * session id, so the same session is always the same agent.
+ */
 export function createRootInput(store: Store, ctx: ExtensionContext, now = Date.now()): AgentInput {
+	const forkedFrom = forkedFromOf(store, ctx.sessionManager.getHeader()?.parentSession);
 	const name = path.basename(ctx.cwd) || "root";
-	const id = newId("main", name);
 	const input: AgentInput = {
-		id,
+		id: ctx.sessionManager.getSessionId(),
 		role: "main",
 		name,
 		parent: null,
@@ -24,36 +28,35 @@ export function createRootInput(store: Store, ctx: ExtensionContext, now = Date.
 		stepTimeoutMs: DEFAULT_STEP_TIMEOUT_MS,
 		depth: 0,
 		createdAt: now,
+		...(forkedFrom ? { forkedFrom } : {}),
 	};
 	store.create(input);
 	return input;
 }
 
-/** Session entry that ties a pi session to its root agent, so resuming the session shows its agents. */
-export const ROOT_ENTRY = "agents.root";
-
-/** The root id recorded in a session branch (the latest entry wins). */
-export function savedRootId(entries: Iterable<{ type: string; customType?: string; data?: unknown }>): string | undefined {
-	let found: string | undefined;
-	for (const entry of entries) {
-		const id = (entry.data as { id?: unknown } | undefined)?.id;
-		if (entry.type === "custom" && entry.customType === ROOT_ENTRY && typeof id === "string") found = id;
+/** Id of the session in a session file: the `id` of its first line (the header). */
+function sessionIdOfFile(file: string): string | undefined {
+	try {
+		const fd = fs.openSync(file, "r");
+		try {
+			const buffer = Buffer.alloc(4096);
+			const text = buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0)).toString("utf8");
+			const id = (JSON.parse(text.split("\n")[0] ?? "") as { id?: unknown }).id;
+			return typeof id === "string" ? id : undefined;
+		} finally {
+			fs.closeSync(fd);
+		}
+	} catch {
+		return undefined;
 	}
-	return found;
 }
 
-/**
- * Pick the root agent for a session, in order: the one recorded in the session
- * (resume, fork), then the one this process already had (`/new` keeps its agents),
- * else a fresh one. A root is usable when it exists, is a root, and no other live
- * process holds it.
- */
-export function chooseRoot(store: Store, saved: string | undefined, previous: AgentInput | undefined, create: () => AgentInput): AgentInput {
-	for (const id of [saved, previous?.id]) {
-		if (!id) continue;
-		const record = store.readInput(id);
-		const heldElsewhere = store.isAlive(id) && store.lockPid(id) !== process.pid;
-		if (record && record.role === "main" && record.parent === null && !heldElsewhere) return record;
+/** The agent a forked/cloned session came from: its parent session's id, when the store knows that agent. */
+export function forkedFromOf(store: Store, parentSessionFile: string | undefined): string | undefined {
+	const id = parentSessionFile ? sessionIdOfFile(parentSessionFile) : undefined;
+	try {
+		return id && store.exists(id) ? id : undefined;
+	} catch {
+		return undefined; // not a valid agent id
 	}
-	return create();
 }

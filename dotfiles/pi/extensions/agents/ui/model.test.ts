@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentRecord, EffectiveStatus } from "../store/index.ts";
-import { actionsFor, activityText, alignCells, buildRows, cleanSummary, filterRows, formatDuration, fuzzyScore, lineageText, widgetLines } from "./model.ts";
+import { agentMessageText } from "../store/index.ts";
+import { actionsFor, activityText, agentMessageView, alignCells, buildRows, claimLine, cleanSummary, filterRows, formatDuration, fuzzyScore, lineageText, TRIAGE_WINDOW_MS, triage, widgetLines } from "./model.ts";
 
 const rec = (id: string, parent: string | null, status: EffectiveStatus, extra: Partial<AgentRecord["input"]> = {}, state: Partial<NonNullable<AgentRecord["state"]>> = {}): AgentRecord => ({
 	input: { id, role: id.split(".")[0]!, name: id.split(".")[1] ?? id, parent, objective: `obj ${id}`, profile: { name: "p", modelId: "m", thinking: "low" }, cwd: "/", interactable: true, stepTimeoutMs: 1, depth: 0, createdAt: Number(id.slice(-4)), ...extra },
@@ -78,6 +79,15 @@ describe("buildRows", () => {
 		const lostChild = [rec("main.a.0001", null, "stopped"), rec("worker.b.0002", "main.a.0001", "lost")];
 		assert.equal(buildRows(lostChild, { ...opts, hideFinished: true }).length, 2);
 	});
+	it("hides a dormant root with nothing unfinished, but shows it while a child is unfinished", () => {
+		const dormant = { ...rec("main.a.0001", null, "dormant"), alive: false };
+		assert.equal(dormant.status, "dormant");
+		const finishedChild = rec("scout.b.0002", "main.a.0001", "done");
+		assert.equal(buildRows([dormant, finishedChild], { ...opts, hideFinished: true }).length, 0);
+		const rows = buildRows([dormant, rec("worker.c.0003", "main.a.0001", "working")], { ...opts, hideFinished: true });
+		assert.deepEqual(rows.map((r) => r.id), ["main.a.0001", "worker.c.0003"]);
+		assert.deepEqual(rows[0]!.cells.slice(1, 3), ["main", "dormant"]);
+	});
 	it("keeps a done-but-alive (attachable) agent visible even when its root has stopped", () => {
 		const stoppedRoot = rec("main.a.0001", null, "stopped");
 		const attachable = { ...rec("worker.b.0002", "main.a.0001", "done"), alive: true };
@@ -101,6 +111,166 @@ describe("buildRows", () => {
 		const rows = buildRows([rec("worker.z.0009", "ghost.x.0000", "working")], { ...opts, stalls: new Map([["worker.z.0009", { kind: "stall", overMs: 1, detail: "" }]]) });
 		assert.equal(rows[0]?.cells[0], "! z"); // depth 0, stall glyph
 		assert.equal(rows[0]?.tone, "error");
+	});
+});
+
+describe("triage", () => {
+	const H = 3_600_000;
+	const NOW = 100 * H;
+	const o = { now: NOW, breadcrumb: (id: string) => id };
+	const root = rec("main.root.0001", null, "idle", { role: "main" });
+	const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+	const stall = (id: string) => new Map([[id, { kind: "stall" as const, overMs: 1, detail: "" }]]);
+	const kid = (id: string, status: EffectiveStatus, state: Partial<NonNullable<AgentRecord["state"]>> = {}, parent = "main.root.0001") => rec(id, parent, status, {}, state);
+
+	it("never lists roots, but lists their children", () => {
+		const t = triage([root, rec("main.old.0000", null, "stopped", { role: "main" }), kid("worker.a.0002", "working")], o);
+		assert.deepEqual(ids(t.items), ["header:working", "worker.a.0002"]);
+		// a main-role session nested under another agent is still the user's own
+		const nested = rec("main.nested.0003", "main.root.0001", "dormant", { role: "main" });
+		assert.deepEqual(ids(triage([root, nested, kid("worker.c.0004", "waiting-on-parent", {}, "main.nested.0003")], o).needs), ["worker.c.0004"]);
+		assert.equal(triage([root, nested], o).items.length, 0);
+	});
+
+	describe("NEEDS YOU", () => {
+		it("includes waiting-on-user", () => {
+			assert.deepEqual(ids(triage([root, kid("worker.a.0002", "waiting-on-user")], o).needs), ["worker.a.0002"]);
+		});
+		it("waiting-on-parent needs the human only when the parent is a root, gone or not alive", () => {
+			const mid = kid("worker.m.0002", "working");
+			const underRoot = kid("worker.r.0003", "waiting-on-parent");
+			const underLive = kid("worker.l.0004", "waiting-on-parent", {}, "worker.m.0002");
+			const underDead = kid("worker.d.0005", "waiting-on-parent", {}, "worker.x.0006");
+			const dead = { ...kid("worker.x.0006", "done"), alive: false };
+			const underMissing = kid("worker.g.0007", "waiting-on-parent", {}, "worker.ghost.9999");
+			const t = triage([root, mid, underRoot, underLive, underDead, dead, underMissing], o);
+			assert.deepEqual(ids(t.needs).sort(), ["worker.d.0005", "worker.g.0007", "worker.r.0003"]);
+			assert.deepEqual(ids(t.working), ["worker.m.0002"]);
+			assert.deepEqual(ids(t.completed).sort(), ["worker.l.0004", "worker.x.0006"]); // answered by a live agent, not the human
+		});
+		it("a stalled working agent is NEEDS YOU, not WORKING", () => {
+			const a = kid("worker.a.0002", "working", { activity: { lastEventAt: NOW - 5 * 60_000, lastSeenAt: NOW, inFlight: null } });
+			const t = triage([root, a], { ...o, stalls: stall("worker.a.0002") });
+			assert.deepEqual(ids(t.needs), ["worker.a.0002"]);
+			assert.equal(t.working.length, 0);
+			assert.equal(t.needs[0]!.cells[0], "! a");
+			assert.equal(t.needs[0]!.cells[3], "stalled 5m");
+			assert.equal(triage([root, a], o).working.length, 1); // without a report it is just working
+		});
+		it("a stalled idle (wedged) agent is NEEDS YOU too", () => {
+			const a = kid("worker.a.0002", "idle");
+			assert.deepEqual(ids(triage([root, a], { ...o, stalls: stall("worker.a.0002") }).needs), ["worker.a.0002"]);
+		});
+		it("error decays into COMPLETED after 24h", () => {
+			const at = (hours: number) => kid("worker.a.0002", "error", { since: NOW - hours * H, summary: "boom. more" });
+			const young = triage([root, at(23)], o);
+			assert.deepEqual(ids(young.needs), ["worker.a.0002"]);
+			assert.equal(young.needs[0]!.cells[3], "error 23h ago · boom.");
+			const old = triage([root, at(25)], { ...o, completedMaxAgeMs: undefined });
+			assert.equal(old.needs.length, 0);
+			assert.deepEqual(ids(old.completed), ["worker.a.0002"]);
+		});
+		it("lost decays into COMPLETED after 24h, measured from its last heartbeat", () => {
+			const at = (hours: number) => kid("worker.a.0002", "lost", { since: 0, activity: { lastEventAt: 0, lastSeenAt: NOW - hours * H, inFlight: null } });
+			const lostStall = (id: string) => new Map([[id, { kind: "lost" as const, overMs: 1, detail: "" }]]);
+			const young = triage([root, at(23)], { ...o, stalls: lostStall("worker.a.0002") });
+			assert.deepEqual(ids(young.needs), ["worker.a.0002"]);
+			assert.equal(young.needs[0]!.cells[3], "gone 23h");
+			const old = triage([root, at(25)], { ...o, stalls: lostStall("worker.a.0002"), completedMaxAgeMs: TRIAGE_WINDOW_MS });
+			assert.equal(old.needs.length, 0);
+			assert.equal(old.completed.length, 0); // outside the default 24h window
+			assert.deepEqual(ids(triage([root, at(25)], { ...o, stalls: lostStall("worker.a.0002"), completedMaxAgeMs: undefined }).completed), ["worker.a.0002"]);
+		});
+		it("orders longest waiting first: waiting by since, stalls by lastEventAt", () => {
+			const act = (lastEventAt: number) => ({ activity: { lastEventAt, lastSeenAt: NOW, inFlight: null } });
+			const recs = [
+				root,
+				kid("worker.w2.0002", "waiting-on-user", { since: NOW - 10 * 60_000 }),
+				kid("worker.s1.0003", "working", act(NOW - 30 * 60_000)),
+				kid("worker.w1.0004", "waiting-on-user", { since: NOW - 20 * 60_000 }),
+				kid("worker.s2.0005", "working", act(NOW - 5 * 60_000)),
+			];
+			const stalls = new Map(["worker.s1.0003", "worker.s2.0005"].map((id) => [id, { kind: "stall" as const, overMs: 1, detail: "" }]));
+			assert.deepEqual(ids(triage(recs, { ...o, stalls }).needs), ["worker.s1.0003", "worker.w1.0004", "worker.w2.0002", "worker.s2.0005"]);
+		});
+		it("labels the wait", () => {
+			const t = triage([root, kid("worker.a.0002", "waiting-on-user", { since: NOW - 12 * 60_000, note: "which db?" })], o);
+			assert.deepEqual(t.needs[0]!.cells.slice(1), ["worker", "needs you", "waiting 12m · which db?"]);
+		});
+	});
+
+	describe("WORKING", () => {
+		it("takes working and starting, longest-running first (runStartedAt, else since)", () => {
+			const recs = [
+				root,
+				kid("worker.a.0002", "working", { since: NOW - 1 * H, runStartedAt: NOW - 10 * 60_000 }),
+				kid("worker.b.0003", "working", { since: NOW - 30 * 60_000 }),
+				kid("worker.c.0004", "starting", { since: NOW - 5_000 }),
+				kid("worker.d.0005", "working", { since: NOW, runStartedAt: NOW - 2 * H }),
+			];
+			assert.deepEqual(ids(triage(recs, o).working), ["worker.d.0005", "worker.b.0003", "worker.a.0002", "worker.c.0004"]);
+		});
+	});
+
+	describe("COMPLETED", () => {
+		const finished = [
+			kid("worker.a.0002", "done", { since: NOW - 3 * 60_000, summary: "All good. Extra." }),
+			kid("scout.b.0003", "stopped", { since: NOW - 2 * H }),
+			kid("scout.c.0004", "timed-out", { since: NOW - 26 * H }),
+			kid("worker.d.0005", "idle", { since: NOW - 23 * H }),
+		];
+		it("lists the last 24h by default, most recent first; show-all adds the rest", () => {
+			const t = triage([root, ...finished], { ...o, completedMaxAgeMs: TRIAGE_WINDOW_MS });
+			assert.deepEqual(ids(t.completed), ["worker.a.0002", "scout.b.0003", "worker.d.0005"]);
+			assert.deepEqual(ids(triage([root, ...finished], o).completed), ["worker.a.0002", "scout.b.0003", "worker.d.0005", "scout.c.0004"]);
+		});
+		it("never ages out an agent that still has a process (idle, attachable done)", () => {
+			const idle = kid("worker.a.0002", "idle", { since: NOW - 30 * H });
+			const attachable = { ...kid("worker.b.0003", "done", { since: NOW - 30 * H }), alive: true };
+			assert.deepEqual(ids(triage([root, idle, attachable], { ...o, completedMaxAgeMs: TRIAGE_WINDOW_MS }).completed).sort(), ["worker.a.0002", "worker.b.0003"]);
+		});
+		it("a decayed lost agent keeps the muted look, not the stall glyph", () => {
+			const lost = kid("worker.a.0002", "lost", { since: 0, activity: { lastEventAt: 0, lastSeenAt: NOW - 30 * H, inFlight: null } });
+			const t = triage([root, lost], { ...o, stalls: new Map([["worker.a.0002", { kind: "lost" as const, overMs: 1, detail: "" }]]) });
+			assert.equal(t.completed[0]!.cells[0], "∅ a");
+			assert.equal(t.completed[0]!.tone, "muted");
+		});
+		it("labels the completion age and summary", () => {
+			assert.deepEqual(triage([root, finished[0]!], o).completed[0]!.cells.slice(1), ["worker", "done", "done 3m ago · All good."]);
+		});
+		it("keeps a done-but-alive (attachable) agent, and idle or dormant non-roots", () => {
+			const attachable = { ...kid("worker.a.0002", "done", { since: NOW - 60_000 }), alive: true };
+			const dormant = { ...kid("worker.b.0003", "dormant", { since: NOW - 60_000 }), alive: false };
+			assert.deepEqual(ids(triage([root, attachable, dormant], o).completed).sort(), ["worker.a.0002", "worker.b.0003"]);
+		});
+		it("a record with no readable state is completed, only visible under show-all", () => {
+			const broken = { ...kid("worker.a.0002", "lost"), state: undefined };
+			assert.equal(triage([root, broken], { ...o, completedMaxAgeMs: TRIAGE_WINDOW_MS }).items.length, 0);
+			assert.deepEqual(ids(triage([root, broken], o).completed), ["worker.a.0002"]);
+		});
+	});
+
+	it("flattens with a header per non-empty group, counts and no empty groups", () => {
+		const recs = [root, kid("worker.a.0002", "waiting-on-user"), kid("worker.b.0003", "done", { since: NOW - 1000 }), kid("worker.c.0004", "done", { since: NOW - 2000 })];
+		const { items } = triage(recs, o);
+		assert.deepEqual(ids(items), ["header:needs", "worker.a.0002", "header:completed", "worker.b.0003", "worker.c.0004"]);
+		assert.deepEqual(items.filter((r) => r.header).map((r) => r.cells), [["NEEDS YOU (1)"], ["COMPLETED (2)"]]);
+		assert.ok(items.filter((r) => r.header).every((r) => r.searchText === ""));
+	});
+
+	it("scopes to a subtree and shows the parent's name as the suffix", () => {
+		const mid = kid("worker.m.0002", "working");
+		const leaf = kid("scout.l.0003", "working", {}, "worker.m.0002");
+		const other = kid("worker.o.0004", "working");
+		const t = triage([root, mid, leaf, other], { ...o, subtreeOf: "worker.m.0002" });
+		assert.deepEqual(ids(t.working), ["worker.m.0002", "scout.l.0003"]);
+		assert.deepEqual(t.working.map((r) => r.suffix), ["root", "m"]);
+	});
+
+	it("disambiguates duplicate names across groups", () => {
+		const twin = kid("worker.y.0003", "done", { since: NOW - 1000 });
+		const t = triage([root, kid("worker.x.0002", "working"), { ...twin, input: { ...twin.input, name: "x" } }], o);
+		assert.deepEqual(t.items.filter((r) => !r.header).map((r) => r.name), ["x·0002", "x·0003"]);
 	});
 });
 
@@ -154,17 +324,43 @@ describe("actionsFor", () => {
 		assert.deepEqual(ids(rec("main.root.0001", null, "idle", { role: "main" }), "main.root.0001"), ["details"]);
 	});
 	it("offers attach, message, interrupt, kill, details for a live interactable agent", () => {
-		assert.deepEqual(ids(rec("worker.a.0002", "main.root.0001", "working"), "main.root.0001"), ["attach", "message", "interrupt", "kill", "details"]);
+		assert.deepEqual(ids(rec("worker.a.0002", "main.root.0001", "working"), "main.root.0001"), ["attach", "message", "done", "interrupt", "kill", "details"]);
 	});
 	it("does not offer attach for a live non-interactable agent", () => {
-		assert.deepEqual(ids(rec("scout.s.0003", "main.root.0001", "working", { interactable: false }), "main.root.0001"), ["message", "interrupt", "kill", "details"]);
+		assert.deepEqual(ids(rec("scout.s.0003", "main.root.0001", "working", { interactable: false }), "main.root.0001"), ["message", "done", "interrupt", "kill", "details"]);
 	});
 	it("offers resume (and attach, if interactable) for a dead resumable agent", () => {
-		assert.deepEqual(ids(rec("worker.a.0002", "main.root.0001", "lost")), ["attach", "message", "resume", "details"]);
+		assert.deepEqual(ids(rec("worker.a.0002", "main.root.0001", "lost")), ["attach", "message", "done", "resume", "details"]);
 		assert.deepEqual(ids(rec("scout.s.0003", "main.root.0001", "done", { interactable: false })), ["message", "resume", "details"]);
 		assert.equal(actionsFor(rec("worker.a.0002", "main.root.0001", "lost"), undefined)[0]![2], "resume it, then attach");
 	});
+	it("offers Mark done only where /agent-done does something", () => {
+		assert.ok(!ids(rec("worker.a.0002", "main.root.0001", "done", { interactable: false })).includes("done"));
+		assert.ok(!ids(rec("worker.a.0002", "main.root.0001", "stopped")).includes("done"));
+		assert.ok(ids(rec("worker.a.0002", "main.root.0001", "idle")).includes("done"));
+	});
 	it("never offers resume for a dead root", () => {
 		assert.deepEqual(ids(rec("main.old.0000", null, "stopped", { role: "main" })), ["message", "details"]);
+	});
+});
+
+describe("transcript markers", () => {
+	it("renders claim entries as one line and ignores foreign or malformed ones", () => {
+		const spawned = claimLine("agents.spawn", { id: "scout.a.0001", name: "a", role: "scout", objective: `find\nthings ${"x".repeat(200)}` })!;
+		assert.match(spawned, /^▸ spawned a \(scout\) · find things x+…$/);
+		assert.equal([...spawned.split(" · ")[1]!].length, 80);
+		assert.equal(claimLine("agents.result", { id: "scout.a.0001", status: "done", summary: "all good" }), "◂ scout.a.0001 done · all good");
+		assert.equal(claimLine("agents.result", {}), undefined);
+		assert.equal(claimLine("other", { id: "x" }), undefined);
+	});
+	it("shows the sender from details and collapses long bodies", () => {
+		const text = agentMessageText({ from: "worker.a.0001", kind: "question", id: "m1", body: Array.from({ length: 10 }, (_, i) => `line ${i}`).join("\n") });
+		const collapsed = agentMessageView(text, { from: "worker.a.0001", kind: "question" }, false);
+		assert.equal(collapsed.header, "[from worker.a.0001 · question]");
+		assert.equal(collapsed.body.length, 6);
+		assert.equal(collapsed.hidden, 4);
+		assert.equal(collapsed.body[0], "line 0");
+		assert.deepEqual(agentMessageView(text, undefined, true).hidden, 0);
+		assert.deepEqual(agentMessageView("plain", undefined, false).body, ["plain"]);
 	});
 });

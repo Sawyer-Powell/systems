@@ -4,19 +4,29 @@
  * terminal-state handling. See SPEC.md.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type AgentsHost, rememberAgentId } from "../host.ts";
+import type { AgentsHost } from "../host.ts";
 import {
+	AGENT_MESSAGE,
 	type AgentMessage,
+	type AgentMessageDetails,
+	agentMessageText,
+	claimsFromBranch,
 	type AgentStatus,
 	deliveryForParent,
 	ERROR_MAX_CHARS,
 	HEARTBEAT_MS,
 	isTerminal,
+	orientation,
+	RESULT_ENTRY,
+	resultClaim,
+	settleDone,
 	SUMMARY_MAX_CHARS,
+	wrapUpText,
 } from "../store/index.ts";
 import { ActivityTracker } from "./activity.ts";
-import { chooseRoot, createRootInput, ROOT_ENTRY, savedRootId } from "./identity.ts";
+import { createRootInput } from "./identity.ts";
 import { InboxPump } from "./inbox.ts";
+import { insertAtRunPosition } from "./orientation-position.ts";
 
 interface AssistantLike {
 	role?: string;
@@ -74,6 +84,8 @@ export function registerRuntime(host: AgentsHost): void {
 	let runTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastRun: AssistantLike | undefined;
 	let sessionStartedAt = 0;
+	/** A `/agent-done` request is outstanding: the next settled run ends it (see `settleDone`). */
+	let pendingDone = false;
 
 	const setStatus = (status: AgentStatus, extra: Record<string, unknown> = {}) => {
 		if (id) store.writeState(id, { status, ...extra });
@@ -96,6 +108,7 @@ export function registerRuntime(host: AgentsHost): void {
 			// A control message sent while this agent was dead must not fire on resume.
 			if (message.ts < sessionStartedAt) return;
 			if (message.control === "interrupt") ctx.abort();
+			else if (message.control === "done") requestDone(message);
 			else if (message.control === "stop") {
 				setStatus("stopped");
 				ctx.shutdown();
@@ -106,12 +119,39 @@ export function registerRuntime(host: AgentsHost): void {
 		if (message.kind === "answer" && state?.waitingOn && message.inReplyTo === state.waitingOn.messageId) {
 			store.writeState(id, { waitingOn: undefined });
 		}
+		// A child's result is a claim of this branch, whether or not it enters the model's context.
+		if (message.kind === "result" && store.readInput(message.from)?.parent === id) {
+			const status = store.readState(message.from)?.status ?? "unknown";
+			pi.appendEntry(RESULT_ENTRY, resultClaim(message.from, status, message.body, Date.now()));
+		}
 		if (message.deliver === "ui") {
 			if (ctx.hasUI) ctx.ui.notify(`[${message.from}] ${message.kind}: ${message.body.slice(0, 200)}`, "info");
 			return;
 		}
-		const text = `[from ${message.from} · ${message.kind} · ${message.id}]\n${message.body}`;
-		await pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "steer" });
+		// A custom message reaches the model like user input and wakes an idle agent, but the
+		// transcript shows who sent it instead of pretending the user typed it.
+		const details: AgentMessageDetails = { from: message.from, kind: message.kind, id: message.id, inReplyTo: message.inReplyTo };
+		pi.sendMessage(
+			{ customType: AGENT_MESSAGE, content: agentMessageText(message), display: true, details },
+			{ triggerTurn: true, deliverAs: ctx.isIdle() ? undefined : "steer" },
+		);
+	}
+
+	/**
+	 * `/agent-done`: ask this agent to wrap up. The agent runs a normal turn (steered into a run in
+	 * progress, never aborting it) and calls `report_done` itself; `agent_settled` finishes the job
+	 * if it did not. Roots, and agents that are not live work, ignore it.
+	 */
+	function requestDone(message: AgentMessage): void {
+		if (!ctx || !host.identity?.parent) return;
+		const status = currentStatus();
+		if (status === "done" || status === "stopped" || status === "timed-out") return;
+		pendingDone = true;
+		const details: AgentMessageDetails = { from: message.from, kind: "control", id: message.id };
+		pi.sendMessage(
+			{ customType: AGENT_MESSAGE, content: agentMessageText({ from: message.from, kind: "control", id: message.id, body: wrapUpText() }), display: true, details },
+			{ triggerTurn: true, deliverAs: ctx.isIdle() ? undefined : "steer" },
+		);
 	}
 
 	function finishNonInteractable(aborted: boolean): void {
@@ -138,15 +178,14 @@ export function registerRuntime(host: AgentsHost): void {
 			ctx = context;
 			host.ctx = context;
 
-			// A launched child keeps its identity. A root follows its pi session: the root
-			// recorded in the session (resume/fork), else the process's previous one (/new).
-			let input = host.launched?.parent ? host.launched : undefined;
-			if (!input) {
+			// Agent id === pi session id: a child was launched with `--session-id <agent id>`; a
+			// root is created for the first session that has no record. Resuming a session finds
+			// its agent again.
+			const sessionId = context.sessionManager.getSessionId();
+			let input = store.readInput(sessionId);
+			if (!input || !input.parent) {
 				if (context.mode !== "tui") return; // headless one-offs are not agents
-				const saved = savedRootId(context.sessionManager.getBranch());
-				input = chooseRoot(store, saved, host.launched, () => createRootInput(store, context));
-				rememberAgentId(input.id); // survives /reload: the next factory reads it
-				if (saved !== input.id) pi.appendEntry(ROOT_ENTRY, { id: input.id });
+				input ??= createRootInput(store, context);
 			}
 			try {
 				store.acquireLock(input.id);
@@ -188,6 +227,40 @@ export function registerRuntime(host: AgentsHost): void {
 		}),
 	);
 
+	// Model-facing orientation: what this agent has going. Computed once per run and appended as
+	// the last message of each LLM call (not persisted, not in the system prompt): the cached
+	// prompt prefix stays stable, and text other agents wrote is not given system authority.
+	let orientationText: string | undefined;
+	/** Position of the orientation block for the current run; fixed so the prompt cache prefix keeps growing (see orientation-position.ts). */
+	let orientationAt: number | undefined;
+	pi.on("before_agent_start", (_event, context) => {
+		orientationAt = undefined;
+		try {
+			orientationText = id ? orientation(store, id, Date.now(), claimsFromBranch(context.sessionManager.getBranch())) : undefined;
+		} catch (error) {
+			orientationText = undefined;
+			log(`orientation failed: ${String(error)}`);
+		}
+		return undefined;
+	});
+	pi.on("context", (event) => {
+		if (!orientationText) return undefined;
+		const block = { role: "custom" as const, customType: "agents_orientation", content: orientationText, display: false, timestamp: Date.now() };
+		const placed = insertAtRunPosition(event.messages, block as (typeof event.messages)[number], orientationAt);
+		orientationAt = placed.at;
+		return { messages: placed.messages };
+	});
+
+	// An agent's session is its identity: a child's pi cannot be switched to another session
+	// (/new, /resume, /fork, /clone), which would orphan the child and turn its process into a root.
+	const refuseSwitch = (_event: unknown, context: ExtensionContext) => {
+		if (!host.identity?.parent) return undefined;
+		if (context.hasUI) context.ui.notify("An agent's session cannot be replaced. Quit and start pi normally.", "warning");
+		return { cancel: true };
+	};
+	pi.on("session_before_switch", refuseSwitch);
+	pi.on("session_before_fork", refuseSwitch);
+
 	pi.on(
 		"session_shutdown",
 		safe((event: { reason?: string }) => {
@@ -198,27 +271,41 @@ export function registerRuntime(host: AgentsHost): void {
 			if (runTimer) clearTimeout(runTimer);
 			runTimer = undefined;
 			tracker?.reset();
+			orientationText = undefined;
+			pendingDone = false;
 			if (id) {
-				// Only /reload and /new continue as this same agent; quit, resume and fork leave it.
-				if (event.reason !== "reload" && event.reason !== "new") {
+				// Only /reload continues as this same agent. Any other shutdown unloads the session:
+				// a root is then dormant (resuming the session wakes it), a child is stopped.
+				if (event.reason !== "reload") {
 					const status = currentStatus();
-					if (status && !isTerminal(status)) setStatus("stopped");
+					if (host.identity?.parent === null) setStatus("dormant");
+					else if (status && !isTerminal(status)) setStatus("stopped");
 				}
 				store.releaseLock(id);
 			}
 			id = undefined;
 			ctx = undefined;
 			host.identity = undefined;
+			host.ctx = undefined;
+			host.canSpawn = false;
 		}),
 	);
 
 	const touch = safe(() => tracker?.touch());
 	pi.on("turn_end", touch);
-	pi.on("message_start", touch);
+	pi.on(
+		"message_start",
+		safe(() => tracker?.touch()), // assistant message_start is only the response headers, not output
+	);
+	// Raw provider events (where the provider reports them): chunky thinking still shows life.
+	pi.on("provider_stream_event", safe(() => tracker?.touch()));
 	let lastUpdate = 0;
 	pi.on(
 		"message_update",
-		safe(() => {
+		safe((event: { assistantMessageEvent?: { type?: string } }) => {
+			// Real output (text or a tool call), not thinking: only then is silence a hang.
+			const kind = event.assistantMessageEvent?.type;
+			if (kind === "text_start" || kind === "toolcall_start") tracker?.streamStart();
 			const now = Date.now();
 			if (now - lastUpdate > 1000) {
 				lastUpdate = now;
@@ -239,7 +326,7 @@ export function registerRuntime(host: AgentsHost): void {
 	);
 	pi.on(
 		"turn_start",
-		safe(() => tracker?.modelStart()),
+		safe(() => tracker?.modelStart(pi.getThinkingLevel())),
 	);
 	pi.on(
 		"message_end",
@@ -284,9 +371,21 @@ export function registerRuntime(host: AgentsHost): void {
 			if (!id) return;
 			tracker?.reset();
 			const status = currentStatus();
+			const outcome = settleDone({ pending: pendingDone, aborted: Boolean(event.aborted), status, failed: lastRun?.stopReason === "error" });
+			pendingDone = false;
 			if (host.identity && !host.identity.interactable) {
 				if (status && !isTerminal(status)) finishNonInteractable(Boolean(event.aborted));
 				return;
+			}
+			if (outcome === "finish") {
+				// Wrap-up turn ended without report_done: finish on the agent's behalf, with its own last words.
+				const summary = textOf(lastRun).slice(0, SUMMARY_MAX_CHARS);
+				setStatus("done", { summary: summary || undefined, waitingOn: undefined, note: undefined });
+				notifyParent(summary || "(no output)");
+				return;
+			}
+			if ((outcome === "cancelled" || outcome === "asked") && ctx?.hasUI) {
+				ctx.ui.notify(outcome === "cancelled" ? "Done request cancelled: the run was interrupted." : "Done request dropped: the agent asked a question instead. Answer it, then /agent-done again.", "warning");
 			}
 			if (lastRun?.stopReason === "error" && status && !isTerminal(status)) {
 				setStatus("error", { summary: (lastRun.errorMessage ?? "model call failed").slice(0, ERROR_MAX_CHARS) });

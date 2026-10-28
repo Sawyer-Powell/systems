@@ -6,7 +6,7 @@ import { agentToolNames } from "../tool-names.ts";
 import { buildChildArgs, childEnv, killGroup, planLaunch } from "./launch.ts";
 import { compose, fromFrontmatter } from "./profiles.ts";
 import { createSupervisor, resumeMessage } from "./index.ts";
-import { scan } from "./watchdog.ts";
+import { newStalls, scan, stallNotice, treeNotices } from "./watchdog.ts";
 
 const profile = { name: "worker", modelId: "claude-x", provider: "anthropic", thinking: "high", tools: ["read", "bash"], prompt: "be good" };
 
@@ -43,7 +43,6 @@ describe("planLaunch", () => {
 		const plan = planLaunch(base, ["--x"], { home: "/h", ptySocket: "/h/worker.a.0001/pty.sock", dtach: "/bin/dtach", baseEnv: { PI_SESSION_ID: "leak", PATH: "/bin" } });
 		assert.equal(plan.command, "/bin/dtach");
 		assert.deepEqual(plan.args.slice(0, 4), ["-n", "/h/worker.a.0001/pty.sock", "-r", "winch"]);
-		assert.equal(plan.env.PI_AGENT_ID, "worker.a.0001");
 		assert.equal(plan.env.PI_AGENTS_HOME, "/h");
 		assert.equal(plan.env.PI_SESSION_ID, undefined);
 	});
@@ -53,7 +52,7 @@ describe("planLaunch", () => {
 		assert.throws(() => planLaunch(base, [], { home: "/h", ptySocket: "/" + "x".repeat(120) }));
 	});
 	it("childEnv never inherits the session identity", () => {
-		const env = childEnv({ PI_SESSION_FILE: "f", PI_SESSION_ID: "i", A: "1" }, "id", "/h");
+		const env = childEnv({ PI_SESSION_FILE: "f", PI_SESSION_ID: "i", A: "1" }, "/h");
 		assert.equal(env.PI_SESSION_FILE, undefined);
 		assert.equal(env.A, "1");
 	});
@@ -108,6 +107,7 @@ describe("watchdog scan", () => {
 		const [msg] = tmp.store.readInbox("main.root.0001");
 		assert.equal(msg?.kind, "stall");
 		assert.equal(msg?.deliver, "ui");
+		assert.match(msg!.body, /^STALLED CHILD worker\.a\.0002 \(worker\.a\.0002\): stall, .*This is about your child, not about you\./);
 		tmp.store.writeState("worker.a.0002", { activity: { lastEventAt: 200_500, lastSeenAt: 201_500 } });
 		assert.deepEqual(scan(tmp.store, "main.root.0001", reported, 202_000), []);
 		assert.equal(reported.size, 0);
@@ -120,6 +120,55 @@ describe("watchdog scan", () => {
 	});
 });
 
+describe("stall visibility for the user", () => {
+	const tmp = useTempStore("agents-wd2-");
+	const mk = (id: string, parent: string | null) => mkInput(id, parent, { role: "w", name: id.split(".")[1], profile, createdAt: 0 });
+	const stalled = (id: string, lastSeenAt: number) => {
+		tmp.store.acquireLock(id);
+		tmp.store.writeState(id, { status: "working", activity: { lastEventAt: 0, lastSeenAt } });
+	};
+	beforeEach(() => {
+		tmp.store.create(mk("main.root.0001", null));
+		tmp.store.create(mk("worker.a.0002", "main.root.0001"));
+		tmp.store.create(mk("worker.b.0003", "worker.a.0002"));
+	});
+
+	it("newStalls lists a stall once and a recovery resets the dedupe", () => {
+		stalled("worker.b.0003", 200_000);
+		const reported = new Set<string>();
+		const records = () => [tmp.store.record("worker.b.0003")!];
+		assert.deepEqual(newStalls(records(), reported, 200_000).map((s) => s.report.kind), ["stall"]);
+		assert.deepEqual(newStalls(records(), reported, 201_000), []);
+		tmp.store.writeState("worker.b.0003", { activity: { lastEventAt: 200_500, lastSeenAt: 201_500 } });
+		assert.deepEqual(newStalls(records(), reported, 202_000), []);
+		assert.equal(reported.size, 0);
+		assert.equal(newStalls(records(), reported, 400_000).length, 1); // stalls again after recovering
+	});
+	it("reports a grandchild stall to the root once, as a one-line notice, without creating store messages", () => {
+		stalled("worker.b.0003", 200_000);
+		const reported = new Set<string>();
+		const [line, ...rest] = treeNotices(tmp.store, "main.root.0001", reported, 200_000);
+		assert.equal(rest.length, 0);
+		assert.match(line!, /^b·0003 \(w\): stall, .+\. Open \/agents to interrupt\.$/);
+		assert.deepEqual(treeNotices(tmp.store, "main.root.0001", reported, 201_000), []);
+		assert.deepEqual(tmp.store.readInbox("main.root.0001"), []);
+		assert.deepEqual(tmp.store.readInbox("worker.a.0002"), []);
+	});
+	it("leaves direct children to their stall message so the user is not notified twice", () => {
+		stalled("worker.a.0002", 200_000);
+		assert.deepEqual(treeNotices(tmp.store, "main.root.0001", new Set(), 200_000), []);
+		assert.deepEqual(scan(tmp.store, "main.root.0001", new Set(), 200_000), ["worker.a.0002:stall"]);
+	});
+	it("tells the user to resume a lost agent rather than interrupt it", () => {
+		const record = tmp.store.record("worker.b.0003")!;
+		assert.match(stallNotice({ record, report: { kind: "lost", overMs: 1, detail: "process gone" } }), /Open \/agents to resume\.$/);
+	});
+	it("formats the notice", () => {
+		const record = tmp.store.record("worker.b.0003")!;
+		assert.equal(stallNotice({ record, report: { kind: "wedged", overMs: 1, detail: "heartbeat stopped" } }), "b·0003 (w): wedged, heartbeat stopped. Open /agents to interrupt.");
+	});
+});
+
 describe("killGroup", () => {
 	it("is a no-op for a pid that is gone", () => {
 		assert.doesNotThrow(() => killGroup(999_999, "SIGTERM"));
@@ -129,7 +178,7 @@ describe("killGroup", () => {
 describe("resume guards", () => {
 	const tmp = useTempStore("agents-sup-");
 	const base = (id: string, role: string) => mkInput(id, null, { role, profile, stepTimeoutMs: 1 });
-	const sup = () => createSupervisor({ pi: {}, store: tmp.store, launched: undefined, interactable: true, depth: 0, canSpawn: true, identity: undefined, ctx: undefined } as never);
+	const sup = () => createSupervisor({ pi: {}, store: tmp.store, canSpawn: true, identity: undefined, ctx: undefined } as never);
 
 	it("refuses to resume a root, an unknown agent, a live agent, and one that is still starting", async () => {
 		tmp.store.create(base("main.r.0001", "main"));

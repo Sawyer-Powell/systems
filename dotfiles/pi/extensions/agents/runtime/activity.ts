@@ -6,6 +6,8 @@ import { type InFlight, MODEL_REQUEST_DEADLINE_MS, type Store } from "../store/i
 
 const THROTTLE_MS = 1000;
 const SUMMARY_MAX = 80;
+/** Thinking levels whose first token may legitimately take minutes. */
+const SLOW_THINKING: readonly string[] = ["xhigh", "max"];
 
 interface ActivityDeps {
 	store: Store;
@@ -38,6 +40,7 @@ export class ActivityTracker {
 	private readonly now: () => number;
 	private tools = new Map<string, InFlight>();
 	private model: InFlight | null = null;
+	private streaming = false;
 	private deadlines = new Map<string, number>();
 	private lastEventAt: number;
 	private lastFlush = 0;
@@ -80,20 +83,40 @@ export class ActivityTracker {
 		this.event(this.now());
 	}
 
-	modelStart(): void {
+	/**
+	 * A model request began. Only the slowest thinking levels get a long first-token deadline
+	 * (silent thinking is legitimate there); otherwise the plain step timeout applies from the start.
+	 * The deadline is dropped on the first real output (`streamStart`).
+	 */
+	modelStart(thinking?: string): void {
 		const startedAt = this.now();
+		this.streaming = false;
 		this.model = {
 			kind: "model",
 			name: "request",
 			summary: "model request",
 			startedAt,
-			deadline: startedAt + MODEL_REQUEST_DEADLINE_MS, // thinking can be silent for minutes
+			...(thinking !== undefined && SLOW_THINKING.includes(thinking) ? { deadline: startedAt + MODEL_REQUEST_DEADLINE_MS } : {}),
 		};
 		this.event(startedAt);
 	}
 
+	/**
+	 * The first real output (text or a tool call; not thinking, and not the response headers that
+	 * open the stream): from here on silence longer than the step timeout is a hang. Clears the
+	 * first-token deadline and always flushes.
+	 */
+	streamStart(): void {
+		if (this.streaming || !this.model) return;
+		this.streaming = true;
+		const { deadline: _dropped, ...rest } = this.model;
+		this.model = rest;
+		this.event(this.now());
+	}
+
 	modelEnd(): void {
 		this.model = null;
+		this.streaming = false;
 		this.event(this.now());
 	}
 
@@ -102,6 +125,7 @@ export class ActivityTracker {
 		this.tools.clear();
 		this.deadlines.clear();
 		this.model = null;
+		this.streaming = false;
 		this.flush();
 	}
 

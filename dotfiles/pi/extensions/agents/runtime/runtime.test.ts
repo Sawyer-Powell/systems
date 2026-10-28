@@ -35,10 +35,31 @@ describe("ActivityTracker", () => {
 		assert.equal(inFlight, null);
 		assert.equal(tmp.store.readState(ID)?.activity.lastEventAt, 5_000);
 	});
-	it("gives a model request a long deadline so silent thinking is not a stall", () => {
-		const tracker = new ActivityTracker({ store: tmp.store, id: ID, now: () => 1000 });
-		tracker.modelStart();
-		assert.equal(tmp.store.readState(ID)?.activity.inFlight?.deadline, 1000 + 600_000);
+	it("gives a model request a first-token deadline only for xhigh/max thinking", () => {
+		for (const [thinking, expected] of [["xhigh", 1000 + 600_000], ["max", 1000 + 600_000], ["high", undefined], ["low", undefined], [undefined, undefined]] as const) {
+			const tracker = new ActivityTracker({ store: tmp.store, id: ID, now: () => 1000 });
+			tracker.modelStart(thinking);
+			assert.equal(tmp.store.readState(ID)?.activity.inFlight?.deadline, expected, String(thinking));
+		}
+	});
+	it("clears the first-token deadline on the first stream event and flushes it at once", () => {
+		let t = 1000;
+		const tracker = new ActivityTracker({ store: tmp.store, id: ID, now: () => t });
+		tracker.modelStart("xhigh");
+		t = 1100;
+		tracker.touch(); // within the throttle window: not flushed
+		t = 1200;
+		tracker.streamStart();
+		const activity = tmp.store.readState(ID)?.activity;
+		assert.equal(activity?.inFlight?.deadline, undefined);
+		assert.equal(activity?.inFlight?.kind, "model");
+		assert.equal(activity?.lastEventAt, 1200);
+		t = 1300;
+		tracker.streamStart(); // later stream events do nothing more
+		assert.equal(tmp.store.readState(ID)?.activity.lastEventAt, 1200);
+		tracker.modelEnd();
+		tracker.modelStart("xhigh"); // the next request gets its own deadline
+		assert.equal(tmp.store.readState(ID)?.activity.inFlight?.deadline, 1300 + 600_000);
 	});
 	it("prefers the longest-running tool over the model request", () => {
 		let t = 0;
@@ -136,6 +157,23 @@ describe("InboxPump", () => {
 		for (let i = 0; i < 40 && seen.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
 		pump.stop();
 		assert.deepEqual(seen, ["late"]);
+	});
+});
+
+describe("dormant root mailbox", () => {
+	it("accumulates messages while dormant and delivers exactly the pending ones once the session is resumed", async () => {
+		const first = tmp.store.send({ from: "user", to: ID, kind: "instruction", body: "before", deliver: "context", ts: 1000 });
+		const loaded = new InboxPump({ store: tmp.store, id: ID, deliver: () => {} });
+		await loaded.pump(); // session loaded: cursor advances
+		assert.equal(tmp.store.readState(ID)?.lastDelivered, first.id);
+		tmp.store.writeState(ID, { status: "dormant" }); // session unloaded: no pump running
+		tmp.store.send({ from: "user", to: ID, kind: "instruction", body: "while dormant 1", deliver: "context", ts: 2000 });
+		tmp.store.send({ from: "user", to: ID, kind: "instruction", body: "while dormant 2", deliver: "context", ts: 3000 });
+		assert.equal(tmp.store.record(ID)?.status, "dormant");
+		tmp.store.writeState(ID, { status: "idle" }); // session_start on resume
+		const seen: string[] = [];
+		await new InboxPump({ store: tmp.store, id: ID, deliver: (m) => void seen.push(m.body) }).pump();
+		assert.deepEqual(seen, ["while dormant 1", "while dormant 2"]);
 	});
 });
 
