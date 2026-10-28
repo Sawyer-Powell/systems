@@ -154,6 +154,6 @@ describe("describeRecord", () => {
 		tmp.store.writeState("worker.a.0002", { status: "working", activity: { lastEventAt: 0, inFlight: { kind: "tool", name: "bash", summary: "bash: pytest", startedAt: 0 } } });
 		tmp.store.acquireLock("worker.a.0002");
 		const line = describeRecord(tmp.store.record("worker.a.0002")!, 1000);
-		assert.match(line, /worker\.a\.0002 · worker · working · running bash: pytest/);
+		assert.match(line, /worker\.a\.0002 · worker · working · running bash: pytest 1s \(quiet 1s\)/);
 	});
 });

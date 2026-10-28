@@ -20,7 +20,9 @@ export function describeRecord(record: AgentRecord, now = Date.now()): string {
 	const bits = [record.input.id, record.input.role, record.status];
 	if (state && (record.status === "working" || record.status === "idle")) {
 		const quiet = Math.round((now - state.activity.lastEventAt) / 1000);
-		bits.push(state.activity.inFlight ? `running ${state.activity.inFlight.summary}` : `quiet ${quiet}s`);
+		const step = state.activity.inFlight;
+		// A step in flight: how long it has run and how long since the last event, so a long but live request reads differently from a silent one.
+		bits.push(step ? `running ${step.summary} ${Math.round((now - step.startedAt) / 1000)}s (quiet ${quiet}s)` : `quiet ${quiet}s`);
 	}
 	if (state?.note) bits.push(state.note);
 	if (state?.summary) bits.push(state.summary.replace(/\s+/g, " ").slice(0, SUMMARY_WIDTH));
@@ -177,7 +179,9 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 				runTimeoutMs: params.run_timeout_seconds ? params.run_timeout_seconds * 1000 : undefined,
 			});
 			const how = input.interactable ? "Attach with /agents." : "It runs headless and reports back.";
-			return text(`Started ${input.id} (${input.role}). ${how} Do not wait for it.`);
+			const tools = input.profile.tools;
+			const toolNote = tools ? ` Tools: ${tools.join(", ")}${tools.includes("bash") ? "" : " (no shell: it cannot run commands such as jj/git/pytest)"}.` : "";
+			return text(`Started ${input.id} (${input.role}). ${how}${toolNote} Do not wait for it.`);
 		},
 	});
 
