@@ -7,13 +7,33 @@
       },
       "enabled": false
     },
+    "linear": {
+      "url": "https://mcp.linear.app/mcp",
+      "description": "Linear issues, projects, and cycles"
+    },
+    "notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "description": "Notion pages and databases"
+    },
+    "datadog": {
+      "url": "https://mcp.us5.datadoghq.com/v1/mcp",
+      "description": "Datadog logs, metrics, monitors, and traces (us5)"
+    },
+    "plenful": {
+      "url": "https://connectors.staging.plenful.com/mcp",
+      "oauth": {
+        "callbackUrl": "http://localhost:19876/mcp/oauth/callback"
+      },
+      "description": "Plenful connectors (staging)"
+    },
     "exa": {
       "url": "https://mcp.exa.ai/mcp",
       "headers": {
         "Authorization": "!echo Bearer $(op read 'op://Personal/Exa AI/credential')"
       },
       "exposure": "direct",
-      "description": "Web and code search, company/people research, and crawling via Exa"
+      "description": "Web and code search, company/people research, and crawling via Exa",
+      "enabled": false
     }
   }
 }

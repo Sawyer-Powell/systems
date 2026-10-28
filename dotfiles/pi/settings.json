@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "openrouter",
-  "defaultModel": "deepseek/deepseek-v4.1-flash-1017",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-5-5",
   "defaultThinkingLevel": "high",
   "defaultTools": [
     "+codemode"
@@ -19,9 +19,12 @@
         "thinking": "high"
       }
     },
+
     "maxDepth": 3
   },
   "collapseChangelog": true,
-  "theme": "system",
-  "quietStartup": true
+  "theme": "gruvbox-dark",
+  "quietStartup": true,
+  "httpIdleTimeoutMs": 120000,
+  "lastChangelogVersion": "1.4.0"
 }
