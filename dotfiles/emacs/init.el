@@ -118,6 +118,81 @@
 ;;; Projects
 
 (require 'project)
+(require 'uniquify)
+
+;; A secondary JJ workspace has its own .jj directory, but does not
+;; necessarily have a .git marker.  Treat each working copy as a project.
+(add-to-list 'project-vc-extra-root-markers ".jj")
+
+(setq project-mode-line 'non-remote
+      project-switch-commands #'project-find-file
+      uniquify-buffer-name-style 'forward
+      uniquify-dirname-transform #'project-uniquify-dirname-transform)
+
+(defconst sawyer-jj-workspaces-directory
+  (expand-file-name "~/.jj-workspaces/")
+  "Parent directory for managed JJ workspaces.")
+
+(defun sawyer-jj--managed-repository-name (root)
+  "Return the repository component when ROOT is a managed JJ workspace."
+  (let ((relative (file-relative-name root sawyer-jj-workspaces-directory)))
+    (unless (or (string= relative ".")
+                (string-prefix-p "../" relative))
+      (car (split-string relative "/" t)))))
+
+(defun sawyer-jj--git-repository-name (root)
+  "Return the underlying Git repository name for the JJ workspace ROOT."
+  (when-let* ((git-root
+               (condition-case nil
+                   (car (process-lines "jj" "--no-pager" "--color=never"
+                                       "--repository" root "git" "root"))
+                 (error nil))))
+    (let ((git-root (directory-file-name git-root)))
+      (file-name-nondirectory
+       (if (string= (file-name-nondirectory git-root) ".git")
+           (directory-file-name (file-name-directory git-root))
+         git-root)))))
+
+(defun sawyer-jj-repository-name (root)
+  "Return a stable repository name for the JJ workspace at ROOT."
+  (or (sawyer-jj--managed-repository-name root)
+      (sawyer-jj--git-repository-name root)
+      (file-name-nondirectory (directory-file-name root))))
+
+(defun sawyer-jj-workspace-add (name)
+  "Create and visit a JJ workspace named NAME for the current project."
+  (interactive "sWorkspace name: ")
+  (when (or (member name '("" "." ".."))
+            (string-match-p "/" name))
+    (user-error "Workspace name must be one non-empty path component"))
+  (let* ((project (project-current t))
+         (root (expand-file-name (project-root project)))
+         (repository-name (sawyer-jj-repository-name root))
+         (destination
+          (expand-file-name
+           name
+           (expand-file-name repository-name
+                             sawyer-jj-workspaces-directory)))
+         (output (get-buffer-create "*jj workspace add*")))
+    (when (file-exists-p destination)
+      (user-error "Workspace destination already exists: %s" destination))
+    (make-directory (file-name-directory destination) t)
+    (with-current-buffer output
+      (let ((inhibit-read-only t))
+        (erase-buffer)))
+    (let ((status
+           (process-file "jj" nil output t
+                         "--repository" root
+                         "workspace" "add"
+                         "--name" name
+                         destination)))
+      (unless (zerop status)
+        (display-buffer output)
+        (user-error "jj workspace add failed; see %s"
+                    (buffer-name output))))
+    (project-remember-project (project-current t destination))
+    (message "Created JJ workspace: %s" destination)
+    (project-switch-project destination)))
 
 (defun sawyer-read-project-script (prompt)
   "Read a script beneath the current project's scripts directory using PROMPT."
@@ -146,11 +221,10 @@
 
 ;;; ECA
 
+;; Keep an independent ECA session and chat history for each JJ workspace.
 ;; Use an ordinary directional window so standard window commands can manage it.
-(setq eca-chat-use-side-window nil)
-
-;; Start an ECA session after Emacs finishes initializing.
-(add-hook 'emacs-startup-hook #'eca)
+(setq eca-worktree-mode 'isolated
+      eca-chat-use-side-window nil)
 
 (defvar sawyer-eca-last-statuses (make-hash-table :test #'eq)
   "Last observed ECA status for each chat buffer.")
@@ -289,7 +363,8 @@
         "fl" #'flymake-show-buffer-diagnostics
         "fg" #'flymake-goto-diagnostic
         "aa" #'eca
-        "ab" #'eca-switch-to-chat
+        "ab" #'eca-switch-to-project-chat
+        "aB" #'eca-switch-to-chat
         "at" #'eca-chat-select
         "an" #'eca-chat-go-to-next-attention
         "au" #'sawyer-eca-go-to-latest-attention
@@ -307,6 +382,9 @@
         "ss" #'eshell
         "pf" #'project-find-file
         "pp" #'project-switch-project
+        "pb" #'project-switch-to-buffer
+        "pB" #'project-list-buffers
+        "pa" #'sawyer-jj-workspace-add
         "pr" #'run-project-script
         "po" #'open-project-script
         "ps" #'project-shell
