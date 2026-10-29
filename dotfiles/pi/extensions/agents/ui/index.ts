@@ -1,19 +1,20 @@
 /**
- * Human-facing UI: the agents widget under the editor, the lineage status line,
+ * Human-facing UI: the agents widget above the editor, the lineage status line,
  * and the universal `/agents` picker (search, attach, message, resume, kill,
  * details). It reads the store; actions go through the supervisor and mailbox.
  */
 import * as fs from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentsHost } from "../host.ts";
-import { type AgentRecord, planYield, resolveAgent, type StallReport, stallOf } from "../store/index.ts";
+import { type AgentRecord, planYield, type StallReport, stallOf } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 import { stallNotice } from "../supervisor/watchdog.ts";
 import { attach } from "./attach.ts";
 import { createFuzzyList } from "./fuzzy-list.ts";
 import { registerRenderers } from "./render.ts";
-import { type Action, actionsFor, buildRows, lineageText, TRIAGE_GROUPS, triage, widgetLines } from "./model.ts";
+import { type Action, actionsFor, buildRows, lineageText, qualifiedNames, TRIAGE_GROUPS, triage, widgetLines } from "./model.ts";
 
+type AgentOperation = "yield" | "archive" | "restore";
 const WIDGET_KEY = "agents";
 /** Old idle rows leave the compact widget; attention/question/blocked rows never age away. */
 const WIDGET_IDLE_MAX_AGE_MS = 10 * 60_000;
@@ -68,7 +69,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			const { records, ...shared } = load(snapshot?.records);
 			const grouped = triage(records, { ...shared, subtreeOf: self, idleMaxAgeMs: WIDGET_IDLE_MAX_AGE_MS });
 			const rows = TRIAGE_GROUPS.flatMap(group => grouped[group]).filter(row => row.id !== self);
-			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows, 6, snapshot?.total) : undefined);
+			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows, 6, snapshot?.total, { records, focusedId: self }) : undefined, { placement: "aboveEditor" });
 			const record = store.record(self);
 			const parent = record?.input.parent ? store.readInput(record.input.parent) : undefined;
 			ctx.ui.setStatus(WIDGET_KEY, lineageText(record, parent?.name, records.filter(r => r.input.parent === self), snapshot?.children));
@@ -86,25 +87,49 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		host.connection?.off("changed", onChange);
 	});
 
-	async function pick(ctx: ExtensionContext): Promise<string | undefined> {
+	async function pick(ctx: ExtensionContext, initialQuery = "", operation?: AgentOperation): Promise<string | undefined> {
 		return ctx.ui.custom<string | undefined>((tui, theme, _kb, done) =>
 			createFuzzyList({
 				tui,
 				theme,
-				title: "Agents",
+				title: operation ? `Agent ${operation}: select target` : "Agents",
+				initialQuery,
 				getItems: ({ scope, showFinished, view }) => {
 					const { records, ...shared } = load();
+					if (operation) {
+						const eligible = new Set(records.filter(record => operation === "restore" ? record.status === "archived"
+							: operation === "yield" ? planYield(record).action === "send"
+							: record.status !== "archived" && record.status !== "blocked" && record.residency === "parked").map(record => record.input.id));
+						return buildRows(records, shared).filter(row => eligible.has(row.id));
+					}
 					const subtreeOf = scope === "subtree" ? host.identity?.id : undefined;
 					return view === "tree"
 						? buildRows(records, { ...shared, subtreeOf, hideFinished: !showFinished })
 						: triage(records, { ...shared, subtreeOf, showArchived: showFinished }).items;
 				},
-				scopeToggle: Boolean(host.identity),
-				finishedToggle: true,
-				viewToggle: true,
+				scopeToggle: !operation && Boolean(host.identity),
+				finishedToggle: !operation,
+				viewToggle: !operation,
 				done,
 			}),
 		);
+	}
+
+	async function commandTarget(ctx: ExtensionContext, operation: AgentOperation, query: string): Promise<AgentRecord | undefined> {
+		if (query) {
+			const records = store.list();
+			const exactId = records.find(record => record.input.id === query);
+			if (exactId) return exactId;
+			const names = qualifiedNames(records);
+			const exactName = records.filter(record => names.get(record.input.id) === query);
+			if (exactName.length === 1) return exactName[0];
+		}
+		// No nearest-match execution: ambiguity/partial/no target always needs an explicit selection.
+		const id = await pick(ctx, query, operation);
+		if (!id) return undefined;
+		const record = store.record(id);
+		if (!record) ctx.ui.notify("Selected agent is no longer available.", "warning");
+		return record;
 	}
 
 	/** Fuzzy action menu for one agent. */
@@ -193,8 +218,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		}
 	}
 
-	async function open(ctx: ExtensionContext): Promise<void> {
-		const id = await pick(ctx);
+	async function open(ctx: ExtensionContext, query = ""): Promise<void> {
+		const id = await pick(ctx, query);
 		if (!id) return;
 		const record = store.record(id);
 		if (record) await act(ctx, record);
@@ -202,27 +227,25 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 
 	for (const operation of ["yield", "archive", "restore"] as const) {
 		pi.registerCommand(`agent-${operation}`, {
-			description: operation === "yield" ? "Request safe wrap-up and a handoff to you: /agent-yield [id|name]"
-				: `Explicitly ${operation} an agent: /agent-${operation} <id|name>`,
+			description: operation === "yield" ? "Request safe wrap-up and a handoff to you: /agent-yield [id|qualified-name|query]"
+				: `Explicitly ${operation} an agent: /agent-${operation} [id|qualified-name|query]`,
 			handler: async (args, ctx) => {
-				const query = args.trim();
-				const resolved = query ? resolveAgent(store.list(), query)
-					: host.identity?.parent ? { record: store.record(host.identity.id)! } : { error: `Usage: /agent-${operation} <id|name>` };
-				if ("error" in resolved) return void ctx.ui.notify(resolved.error, "warning");
 				try {
+					const target = await commandTarget(ctx, operation, args.trim());
+					if (!target) return;
 					if (operation === "yield") {
-						const result = await requestYield(resolved.record); ctx.ui.notify(result.text, result.level);
+						const result = await requestYield(target); ctx.ui.notify(result.text, result.level);
 					} else {
-						await host.connection?.request(operation, { id: resolved.record.input.id, actor: "user" });
-						ctx.ui.notify(`${operation === "archive" ? "Archived" : "Restored"} ${resolved.record.input.name}. Children were not changed.`, "info");
+						await host.connection?.request(operation, { id: target.input.id, actor: "user" });
+						ctx.ui.notify(`${operation === "archive" ? "Archived" : "Restored"} ${target.input.name}. Children were not changed.`, "info");
 					}
 				} catch (error) { ctx.ui.notify(String(error instanceof Error ? error.message : error), "error"); }
 			},
 		});
 	}
 	pi.registerCommand("agents", {
-		description: "Search every agent, attach, message, resume or kill",
-		handler: async (_args, ctx) => open(ctx),
+		description: "Search every agent: /agents [query]; attach, message, resume or kill",
+		handler: async (args, ctx) => open(ctx, args.trim()),
 	});
 	try {
 		pi.registerShortcut("alt+a", { description: "Open the agents picker", handler: (ctx) => open(ctx) });

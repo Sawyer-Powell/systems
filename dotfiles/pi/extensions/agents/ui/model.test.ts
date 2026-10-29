@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentRecord, AgentState, AgentStatus } from "../store/index.ts";
 import { agentMessageText } from "../store/index.ts";
-import { actionsFor, activityText, agentMessageView, alignCells, buildRows, claimLine, cleanSummary, filterListItems, filterRows, formatDuration, fuzzyScore, lineageText, qualifiedNames, triage, widgetLines } from "./model.ts";
+import { actionsFor, activityText, agentMessageView, alignCells, buildRows, claimLine, cleanSummary, filterListItems, filterRows, formatDuration, fuzzyScore, lineageText, qualifiedNames, TRIAGE_GROUPS, triage, widgetLines } from "./model.ts";
 
 import { createFuzzyList } from "./fuzzy-list.ts";
 
@@ -64,6 +64,38 @@ it("groups six states by urgency and explicit parent while search retains owners
 	const rootActions = actionsFor({ ...first, status: "archived" }, "another-root").map(([action]) => action);
 	assert.ok(rootActions.includes("restore"));
 	assert.ok(!rootActions.includes("restore-attach"), "human roots restore without daemon launch or managed attachment");
+});
+
+it("compact widget names are relative to focus without changing full picker identity", () => {
+	const parent = rec("main.parent.0001", null, "idle", {}, "parent");
+	const child = rec("worker.child.0002", parent.input.id, "idle");
+	const grandchild = rec("worker.grandchild.0003", child.input.id, "needs-you");
+	const other = rec("worker.other.0004", parent.input.id, "idle");
+	const otherGrandchild = rec("worker.grandchild.0005", other.input.id, "blocked", { reason: "review failure" });
+	const sameA = rec("worker.same.0006", parent.input.id, "idle");
+	const sameB = rec("worker.same.0007", parent.input.id, "idle");
+	const records = [parent, child, grandchild, other, otherGrandchild, sameA, sameB];
+	const rowsFor = (focusedId: string) => {
+		const grouped = triage(records, { ...opts, subtreeOf: focusedId });
+		return TRIAGE_GROUPS.flatMap(group => grouped[group]).filter(row => row.id !== focusedId);
+	};
+	const rows = rowsFor(parent.input.id);
+	const original = JSON.stringify({ records, rows });
+	const compact = widgetLines(rows, 20, rows.length, { records, focusedId: parent.input.id }).join("\n");
+	assert.match(compact, /○ child\s+worker/);
+	assert.match(compact, /\? child::grandchild\s+worker/);
+	assert.match(compact, /! other::grandchild\s+worker/);
+	assert.match(compact, /same · 0006/);
+	assert.match(compact, /same · 0007/);
+	assert.ok(!compact.includes("parent::"));
+	assert.ok(!compact.includes("grandchild · 0003"), "distinct branch paths need no extra ID");
+	const focusedChild = widgetLines(rowsFor(child.input.id), 6, 1, { records, focusedId: child.input.id }).join("\n");
+	assert.match(focusedChild, /\? grandchild\s+worker/);
+	assert.ok(!focusedChild.includes("child::"));
+	assert.ok(widgetLines(rows, 20).join("\n").includes("parent::child::grandchild"), "full picker-style rows stay qualified by default");
+	assert.equal(rows.find(row => row.id === grandchild.input.id)?.name, "parent::child::grandchild");
+	assert.equal(JSON.stringify({ records, rows }), original, "relative rendering never mutates input, breadcrumbs or search identity");
+	assert.match(widgetLines(rows, 3, 10, { records, focusedId: parent.input.id })[3]!, /7 more/);
 });
 
 describe("fuzzy filtering", () => {

@@ -64,9 +64,19 @@ separate them. Names take width priority over secondary columns (no34-character 
 selected detail wraps the complete name on narrow terminals. Headers are never selectable.
 Search flattens matches but keeps full qualified ownership visible. Leaf names, qualified
 `::` paths, hyphenated names and full dotted IDs all use the same normalized matcher.
+`/agent-yield`, `/agent-archive` and `/agent-restore` open target selection when no target is
+provided, never silently target self. Partial/ambiguous arguments prefill the fuzzy picker;
+Escape cancels, Enter uses the highlighted stable ID. Exact IDs or unambiguous full qualified
+names may act directly; daemon authority/eligibility still applies. `/agents [query]` also
+prefills search. Model tools still require stable IDs, not fuzzy target guesses.
+
 Tab toggles all/subtree, ctrl+v triage/tree, ctrl+t **include archived**. Only explicit
 archive hides ordinary list records; old blocked/attention records do not silently decay.
 
+The compact widget **above the editor** uses names relative to the focused agent: direct
+child `child`, deeper `child::grandchild`; focused inside child, its direct child is simply
+`grandchild`. Other branch ancestry remains and duplicate relative names get IDs only when
+needed. Full `/agents`/command names and search identities are unchanged.
 Widget reads SQL-ranked bounded candidates/counts, not all parked metadata on every event.
 Needs-you/blocked/parent-question priorities never age away; compact idle rows use a ten-minute
 window. Universal picker metadata loads on demand. No periodic Pi store scans or UI polling.

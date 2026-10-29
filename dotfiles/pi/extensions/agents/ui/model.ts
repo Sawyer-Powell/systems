@@ -93,6 +93,16 @@ interface BuildOptions {
 /** Retirement is explicit archive, never inferred from completion, age or process absence. */
 const isFinished = (r: AgentRecord) => r.status === "archived";
 
+function disambiguateNames(names: Map<string, string>): Map<string, string> {
+	const duplicates = new Map<string, string[]>();
+	for (const [id, name] of names) duplicates.set(name, [...(duplicates.get(name) ?? []), id]);
+	for (const [name, ids] of duplicates) if (ids.length > 1) for (const id of ids) {
+		const tail = id.slice(-4);
+		names.set(id, `${name} · ${ids.some(other => other !== id && other.slice(-4) === tail) ? id : tail}`);
+	}
+	return names;
+}
+
 /** Rust-style display names derived from immutable lineage; IDs remain operation identities. */
 export function qualifiedNames(records: AgentRecord[]): Map<string, string> {
 	const byId = new Map(records.map(record => [record.input.id, record]));
@@ -107,13 +117,7 @@ export function qualifiedNames(records: AgentRecord[]): Map<string, string> {
 		names.set(id, name); return name;
 	};
 	for (const record of records) resolve(record.input.id);
-	const duplicates = new Map<string, string[]>();
-	for (const [id, name] of names) duplicates.set(name, [...(duplicates.get(name) ?? []), id]);
-	for (const [name, ids] of duplicates) if (ids.length > 1) for (const id of ids) {
-		const tail = id.slice(-4);
-		names.set(id, `${name} · ${ids.some(other => other !== id && other.slice(-4) === tail) ? id : tail}`);
-	}
-	return names;
+	return disambiguateNames(names);
 }
 
 /** Depth-first rows: roots by creation time, children under their parent. */
@@ -354,10 +358,25 @@ export function filterListItems<T extends { searchText: string; cells: string[];
 }
 
 /** Widget lines for a tree: aligned, one row per agent. */
-export function widgetLines(rows: Row[], max = 6, total = rows.length): string[] {
+export function widgetLines(rows: Row[], max = 6, total = rows.length, context?: { records: AgentRecord[]; focusedId: string }): string[] {
 	if (rows.length === 0) return [];
 	const shown = rows.slice(0, max);
-	const lines = alignCells(shown.map((row) => row.cells));
+	let names: Map<string, string> | undefined;
+	if (context) {
+		const byId = new Map(context.records.map(record => [record.input.id, record]));
+		names = disambiguateNames(new Map(shown.map(row => {
+			const parts: string[] = [], seen = new Set<string>();
+			let current = byId.get(row.id);
+			while (current && current.input.id !== context.focusedId && !seen.has(current.input.id)) {
+				seen.add(current.input.id); parts.unshift(current.input.name);
+				current = current.input.parent ? byId.get(current.input.parent) : undefined;
+			}
+			return [row.id, current?.input.id === context.focusedId && parts.length ? parts.join("::") : row.name];
+		})));
+	}
+	// Render-only projection: records, full picker names, breadcrumbs and search text stay untouched.
+	const lines = alignCells(shown.map(row => names
+		? [`${row.cells[0]!.slice(0, -row.name.length)}${names.get(row.id)}`, ...row.cells.slice(1)] : row.cells));
 	if (total > max) lines.push(`… ${total - max} more (/agents)`);
 	return lines;
 }

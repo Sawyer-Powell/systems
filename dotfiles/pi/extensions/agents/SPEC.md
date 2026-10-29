@@ -145,9 +145,17 @@ Hiding an archived tree node does not hide active descendants.
 
 Only explicit archive retires ordinary list rows. No old error/lost age-decay into completed.
 Widget SQL computes the same effective state/priority **before** limiting: seven candidates
-per group plus live owners/lineage, and indexed counts. Needs-you/blocked/question states
+per group plus live owners/lineage, and indexed counts. Compact names alone are rendered relative to the
+focused immutable agent ID using that bounded snapshot (child, child::grandchild); records,
+full picker names, breadcrumbs and search data are not changed. Needs-you/blocked/question states
 never age out; the compact idle window is10min. Unrelated invalidations are ignored. Full
 picker metadata is on-demand; no parked transcripts are hydrated for lists or widget.
+
+Targeted user slash commands open the existing fuzzy picker with no argument or a prefilled
+partial/ambiguous query. Exact IDs/unambiguous qualified names may take a direct path. There
+is no nearest-match auto-action or implicit self target. Enter returns the shown stable ID,
+re-read before action; Escape never mutates. All operations still pass existing daemon
+validation. /agents accepts a prefilled query too; model tools remain stable-ID-only.
 
 Profile prompts load from PI_AGENTS_PROFILES override or normal Pi agent-dir/agents. Source
 worker/intuition/scout/system prompts use yield/archive semantics. Installed/custom prompt

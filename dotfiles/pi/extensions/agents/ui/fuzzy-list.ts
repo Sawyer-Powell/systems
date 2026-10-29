@@ -36,6 +36,7 @@ interface FuzzyListOptions {
 	tui: TUI;
 	theme: Theme;
 	title: string;
+	initialQuery?: string;
 	getItems: (toggles: ListToggles) => ListItem[];
 	/** Offer the `tab` scope toggle. */
 	scopeToggle?: boolean;
@@ -54,7 +55,7 @@ export function createFuzzyList(options: FuzzyListOptions): Component {
 	const { tui, theme, done } = options;
 	const pageSize = options.pageSize ?? 12;
 	const toggles: ListToggles = { scope: "all", showFinished: false, view: "triage" };
-	let query = "";
+	let query = options.initialQuery ?? "";
 	let index = 0;
 
 	// A typed query drops headers and ranks agent rows only.
