@@ -178,15 +178,17 @@ describe("killGroup", () => {
 describe("resume guards", () => {
 	const tmp = useTempStore("agents-sup-");
 	const base = (id: string, role: string) => mkInput(id, null, { role, profile, stepTimeoutMs: 1 });
-	const sup = () => createSupervisor({ pi: {}, store: tmp.store, canSpawn: true, identity: undefined, ctx: undefined } as never);
+	const requests: string[] = [];
+	const sup = () => createSupervisor({ pi: {}, store: tmp.store, canSpawn: true, identity: undefined, ctx: undefined,
+		connection: { flush: async () => {}, request: async (op: string) => { requests.push(op); } } } as never);
 
-	it("refuses to resume a root, an unknown agent, a live agent, and one that is still starting", async () => {
+	it("refuses roots and unknown agents, delegating execution fencing to the sole daemon owner", async () => {
 		tmp.store.create(base("main.r.0001", "main"));
 		await assert.rejects(sup().resume("main.r.0001"), /root session/);
 		await assert.rejects(sup().resume("nope.x.0000"), /Unknown agent/);
 		tmp.store.create(base("worker.a.0002", "worker"));
-		await assert.rejects(sup().resume("worker.a.0002"), /already starting/); // fresh create is "starting"
-		tmp.store.acquireLock("worker.a.0002");
-		await assert.rejects(sup().resume("worker.a.0002"), /already running/);
+		requests.length = 0;
+		await sup().resume("worker.a.0002");
+		assert.deepEqual(requests, ["resume"]);
 	});
 });

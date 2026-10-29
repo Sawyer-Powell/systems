@@ -74,6 +74,7 @@ function registerMessaging(pi: ExtensionAPI, host: AgentsHost) {
 				inReplyTo: params.in_reply_to,
 				deliver: "context",
 			});
+			await host.connection?.flush();
 			return text(`Sent ${kind} ${message.id} to ${to}.`);
 		},
 	});
@@ -94,6 +95,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 			if (!parent) throw new Error("You have no parent to ask.");
 			const message = store.send({ from: me, to: parent, kind: "question", body: params.question, deliver: "context" });
 			store.writeState(me, { status: "waiting-on-parent", waitingOn: { messageId: message.id } });
+			await host.connection?.flush();
 			return text("Question sent. End your turn now; the answer will arrive as a message.");
 		},
 	});
@@ -108,6 +110,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 			async execute(_id, params) {
 				const me = selfId(host);
 				store.writeState(me, { status: "waiting-on-user", summary: params.question.slice(0, ERROR_MAX_CHARS) });
+				await host.connection?.flush();
 				return text("The user has been flagged. End your turn now.");
 			},
 		});
@@ -123,6 +126,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		async execute(_id, params) {
 			// Only the note changes: never the status, never a message.
 			store.writeState(selfId(host), { note: normalizeNote(params.note) || undefined });
+			await host.connection?.flush();
 			return text("Status set.");
 		},
 	});
@@ -139,6 +143,7 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 			if (parent) {
 				store.send({ from: me, to: parent, kind: "result", body: params.summary, deliver: deliveryForParent(store, parent) });
 			}
+			await host.connection?.flush();
 			return text("Reported. You may stop.");
 		},
 	});

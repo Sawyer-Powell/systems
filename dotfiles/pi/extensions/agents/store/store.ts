@@ -332,7 +332,7 @@ export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() ||
  */
 export function stallOf(record: AgentRecord, now = Date.now()): StallReport | undefined {
 	const { input, state, status } = record;
-	if (!state || isTerminal(status) || status === "dormant") return undefined;
+	if (!state || isTerminal(status) || status === "dormant" || record.residency === "parked") return undefined;
 	if (status === "lost") {
 		return { kind: "lost", overMs: now - state.activity.lastSeenAt, detail: `process gone while ${state.status}` };
 	}
@@ -346,7 +346,7 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 		};
 	}
 
-	if (now - state.activity.lastSeenAt > WEDGED_AFTER_MS) {
+	if (!record.residency && now - state.activity.lastSeenAt > WEDGED_AFTER_MS) {
 		return {
 			kind: "wedged",
 			overMs: now - state.activity.lastSeenAt - WEDGED_AFTER_MS,

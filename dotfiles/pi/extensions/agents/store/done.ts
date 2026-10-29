@@ -32,7 +32,7 @@ export function planDone(record: AgentRecord): DonePlan {
 			if (record.alive && record.status === "error") return { action: "send" }; // interactable, stays attachable
 			return { action: "refuse", reason: `${name} is ${record.status} with no running process. Resume it first (/agents), then mark it done.` };
 		default:
-			return record.alive ? { action: "send" } : { action: "refuse", reason: `${name} has no running process.` };
+			return record.alive || record.residency === "parked" ? { action: "send" } : { action: "refuse", reason: `${name} has no running process.` };
 	}
 }
 

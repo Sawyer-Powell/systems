@@ -177,7 +177,7 @@ function toRow(record: AgentRecord, options: Pick<BuildOptions, "now" | "stalls"
 		detail: breadcrumb === name ? undefined : breadcrumb,
 		suffix: extra.suffix,
 		searchText: `${input.id} ${input.name} ${input.role} ${STATUS_LABELS[status]} ${input.objective} ${breadcrumb}`.toLowerCase(),
-		cells: [`${"  ".repeat(depth)}${glyph} ${name}`, input.role, STATUS_LABELS[status], extra.last ?? activityText(record, options.now)],
+		cells: [`${"  ".repeat(depth)}${glyph} ${name}`, input.role, STATUS_LABELS[status] + (record.residency === "parked" ? " · parked" : ""), extra.last ?? activityText(record, options.now)],
 	};
 }
 
@@ -273,7 +273,7 @@ export type Action = [id: string, label: string, hint: string];
 export function actionsFor(record: AgentRecord, selfId: string | undefined): Action[] {
 	const isSelf = record.input.id === selfId;
 	const isRoot = record.input.role === "main";
-	const resumable = !record.alive && !isRoot && (isTerminal(record.status) || record.status === "lost");
+	const resumable = !record.alive && !isRoot && (isTerminal(record.status) || record.status === "lost" || record.residency === "parked");
 	const actions: Action[] = [];
 	if (record.input.interactable && !isSelf && (record.alive || resumable)) {
 		actions.push(["attach", "Attach", record.alive ? "open its session in a new zellij tab" : "resume it, then attach"]);
@@ -350,18 +350,19 @@ export function filterRows<T extends { searchText: string }>(rows: T[], query: s
 }
 
 /** Widget lines for a tree: aligned, one row per agent. */
-export function widgetLines(rows: Row[], max = 6): string[] {
+export function widgetLines(rows: Row[], max = 6, total = rows.length): string[] {
 	if (rows.length === 0) return [];
 	const shown = rows.slice(0, max);
 	const lines = alignCells(shown.map((row) => row.cells));
-	if (rows.length > max) lines.push(`… ${rows.length - max} more (/agents)`);
+	if (total > max) lines.push(`… ${total - max} more (/agents)`);
 	return lines;
 }
 
 /** Lineage status text for the footer. */
-export function lineageText(self: AgentRecord | undefined, parentName: string | undefined, children: AgentRecord[]): string | undefined {
-	const running = children.filter((c) => c.alive).length;
-	const kids = children.length > 0 ? `${children.length} agent${children.length === 1 ? "" : "s"} (${running} live)` : undefined;
+export function lineageText(self: AgentRecord | undefined, parentName: string | undefined, children: AgentRecord[], counts?: { total: number; live: number }): string | undefined {
+	const running = counts?.live ?? children.filter((c) => c.alive).length;
+	const total = counts?.total ?? children.length;
+	const kids = total > 0 ? `${total} agent${total === 1 ? "" : "s"} (${running} live)` : undefined;
 	const parent = self?.input.parent && parentName ? `child of ${parentName}` : undefined;
 	const parts = [parent, kids].filter((p): p is string => Boolean(p));
 	return parts.length ? parts.join(" · ") : undefined;

@@ -38,6 +38,8 @@ export interface AgentInput {
 	/** Whole-run limit. Only meaningful for non-interactable agents. */
 	runTimeoutMs?: number;
 	depth: number;
+	/** Spawn-time depth configuration, carried into the daemon's CLI tool allowlist. */
+	spawnDepthLimit?: number;
 	createdAt: number;
 	/**
 	 * Roots only: the agent (root) owning the pi session this one was forked/cloned from.
@@ -135,6 +137,8 @@ export interface AgentRecord {
 	state: AgentState | undefined;
 	alive: boolean;
 	status: EffectiveStatus;
+	/** Independent of task status; parked is expected absence, not lost. */
+	residency?: "parked" | "starting" | "live" | "parking" | "blocked";
 }
 
 export type StallKind = "stall" | "overrun" | "run-overrun" | "wedged" | "lost";

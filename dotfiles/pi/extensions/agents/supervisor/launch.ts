@@ -65,7 +65,7 @@ export function buildChildArgs(
 	else if (extra.length > 0) args.push("--tools", extra.map((name) => `+${name}`).join(","));
 	if (profile.prompt) args.push("--append-system-prompt", writePrompt(`system-${profile.name}`, profile.prompt));
 	if (options.headless) args.push("-p");
-	args.push("--", `@${writePrompt(`message-${Date.now()}`, options.message)}`);
+	if (options.message) args.push("--", `@${writePrompt(`message-${Date.now()}`, options.message)}`);
 	return args;
 }
 

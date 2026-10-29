@@ -5,10 +5,12 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentInput, Store } from "./store/index.ts";
+import type { AgentConnection } from "./central/client.ts";
 
 export interface AgentsHost {
 	pi: ExtensionAPI;
 	store: Store;
+	connection?: AgentConnection;
 	/** interactable && depth < settings.agents.maxDepth. False until session_start (settings are unreadable while loading). */
 	canSpawn: boolean;
 	/** This process's own agent. Set by `runtime` on session_start; undefined before. */

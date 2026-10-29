@@ -6,16 +6,15 @@
 import * as fs from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentsHost } from "../host.ts";
-import { type AgentRecord, deliveryForParent, LOST_DONE_SUMMARY, planDone, resolveAgent, type StallReport, stallOf } from "../store/index.ts";
+import { type AgentRecord, planDone, resolveAgent, type StallReport, stallOf } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
+import { stallNotice } from "../supervisor/watchdog.ts";
 import { attach } from "./attach.ts";
 import { createFuzzyList } from "./fuzzy-list.ts";
 import { registerRenderers } from "./render.ts";
 import { type Action, actionsFor, buildRows, lineageText, TRIAGE_WINDOW_MS, triage, widgetLines } from "./model.ts";
 
-const REFRESH_MS = 2000;
 const WIDGET_KEY = "agents";
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 /** Finished agents leave the compact widget after this long (they stay in /agents). */
 const WIDGET_FINISHED_MAX_AGE_MS = 10 * 60_000;
 
@@ -30,11 +29,21 @@ function tail(file: string, lines: number): string[] {
 export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 	const { pi, store } = host;
 	registerRenderers(pi);
-	let timer: ReturnType<typeof setInterval> | undefined;
+	// Ignore unrelated-tree invalidations; widget reads decode bounded SQL-ranked candidates.
+	const onChange = (change: { id: string; kind: string }) => {
+		const self = host.identity?.id;
+		if (!self) return;
+		const relevant = change.id === self || store.ancestors(change.id).some(r => r.input.id === self);
+		if (!relevant) return;
+		const record = store.record(change.id);
+		if (record && ["stall", "exit"].includes(change.kind) && host.identity?.parent === null && record.input.parent !== self) {
+			const report = stallOf(record); if (report) host.ctx?.ui.notify(stallNotice({ record, report }), "warning");
+		}
+		refresh(host.ctx);
+	};
 
 	/** Records plus the options every view shares; one store read and one `stallOf` per agent per call. */
-	function load() {
-		const records = store.list();
+	function load(records = store.list()) {
 		const stalls = new Map<string, StallReport>();
 		for (const record of records) {
 			const report = stallOf(record);
@@ -55,13 +64,14 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		try {
 			const self = host.identity?.id;
 			if (!self) return;
-			const { records, ...shared } = load();
+			const snapshot = host.connection?.widget(self);
+			const { records, ...shared } = load(snapshot?.records);
 			const { needs, working, completed } = triage(records, { ...shared, subtreeOf: self, completedMaxAgeMs: WIDGET_FINISHED_MAX_AGE_MS });
 			const rows = [...needs, ...working, ...completed].filter((row) => row.id !== self);
-			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows) : undefined);
+			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows, 6, snapshot?.total) : undefined);
 			const record = store.record(self);
 			const parent = record?.input.parent ? store.readInput(record.input.parent) : undefined;
-			ctx.ui.setStatus(WIDGET_KEY, lineageText(record, parent?.name, store.children(self)));
+			ctx.ui.setStatus(WIDGET_KEY, lineageText(record, parent?.name, records.filter(r => r.input.parent === self), snapshot?.children));
 		} catch (error) {
 			process.stderr.write(`[agents] ui refresh failed: ${String(error)}\n`);
 		}
@@ -70,12 +80,10 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		refresh(ctx);
-		timer = setInterval(() => refresh(host.ctx ?? ctx), REFRESH_MS);
-		timer.unref?.();
+		host.connection?.on("changed", onChange);
 	});
 	pi.on("session_shutdown", () => {
-		if (timer) clearInterval(timer);
-		timer = undefined;
+		host.connection?.off("changed", onChange);
 	});
 
 	async function pick(ctx: ExtensionContext): Promise<string | undefined> {
@@ -116,12 +124,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 	/** Open the agent's session in a zellij tab, resuming it first when its process is gone. */
 	async function attachTo(ctx: ExtensionContext, record: AgentRecord): Promise<void> {
 		const id = record.input.id;
-		let current = store.record(id) ?? record;
-		if (!current.alive && current.input.interactable) {
-			await supervisor.resume(id, "The user attached to continue this session.");
-			for (let i = 0; i < 100 && !(store.isAlive(id) && fs.existsSync(store.ptySocket(id))); i++) await sleep(100);
-			current = store.record(id) ?? current;
-		}
+		const current = store.record(id) ?? record;
+		if (current.residency === "blocked") await supervisor.resume(id, "The user attached to explicitly recover this interrupted session. Re-check in-flight work before acting.");
 		const result = await attach(current, store.ptySocket(id));
 		if (!result.opened) ctx.ui.notify(`Not inside zellij. Run: ${result.command}`, "info");
 	}
@@ -135,7 +139,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			`${input.id}  (${store.breadcrumb(input.id)})`,
 			...(forkedFrom ? [`forked from ${forkedFrom.name} (${forkedFrom.id})`] : []),
 			...(inherited ? [`inherited, read-only: owned by ${inherited.input.name} (the session this one was forked from)`] : []),
-			`status: ${record.status}${state?.summary ? ` · ${state.summary.slice(0, 200)}` : ""}`,
+			`status: ${record.status} · ${record.residency ?? "unknown"}${state?.summary ? ` · ${state.summary.slice(0, 200)}` : ""}`,
 			`objective: ${input.objective.slice(0, 300)}`,
 			`model: ${input.profile.modelId} · cwd: ${input.cwd}`,
 			...tail(store.logPath(input.id), 8).map((line) => `log: ${line.slice(0, 160)}`),
@@ -146,7 +150,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 	 * `/agent-done` and the "Mark done" action. A live agent is sent `control: "done"` and finishes itself;
 	 * a lost one has no process to ask, so (like kill) its dead state is written here. Returns the message to show.
 	 */
-	function markDone(record: AgentRecord): { text: string; level: "info" | "warning" } {
+	async function markDone(record: AgentRecord): Promise<{ text: string; level: "info" | "warning" }> {
 		const id = record.input.id;
 		const current = store.record(id) ?? record; // re-read: the state may have changed since the list was drawn
 		const plan = planDone(current);
@@ -158,15 +162,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			return { text: `Told ${current.input.name} to wrap up and mark itself done.${busy}`, level: "info" };
 		}
 		if (store.isAlive(id)) return { text: `${current.input.name} came back to life; try again.`, level: "warning" };
-		store.writeState(id, { status: "done", summary: LOST_DONE_SUMMARY, waitingOn: undefined, note: undefined });
-		const parent = current.input.parent;
-		if (parent) {
-			try {
-				store.send({ from: id, to: parent, kind: "result", body: `MARKED DONE by the user: ${LOST_DONE_SUMMARY}`, deliver: deliveryForParent(store, parent) });
-			} catch (error) {
-				process.stderr.write(`[agents] could not notify parent: ${String(error)}\n`);
-			}
-		}
+		await host.connection?.request("mark-done", { id });
 		return { text: `${current.input.name} had no process; marked done.`, level: "info" };
 	}
 
@@ -181,10 +177,12 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 				const body = await ctx.ui.input(`Message to ${record.input.name}`, "text");
 				if (body?.trim()) {
 					store.send({ from: "user", to: id, kind: "instruction", body, deliver: "context" });
+					await host.connection?.flush();
 					ctx.ui.notify(`Sent to ${id}`, "info");
 				}
 			} else if (choice === "done") {
-				const result = markDone(record);
+				const result = await markDone(record);
+				await host.connection?.flush();
 				ctx.ui.notify(result.text, result.level);
 			} else if (choice === "interrupt" || choice === "kill") {
 				await supervisor.signal(id, choice);
@@ -226,7 +224,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 				target = resolved.record;
 			}
 			try {
-				const result = markDone(target);
+				const result = await markDone(target);
+				await host.connection?.flush();
 				ctx.ui.notify(result.text, result.level);
 			} catch (error) {
 				ctx.ui.notify(String(error instanceof Error ? error.message : error), "error");

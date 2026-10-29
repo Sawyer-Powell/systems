@@ -14,7 +14,6 @@ import {
 	type AgentStatus,
 	deliveryForParent,
 	ERROR_MAX_CHARS,
-	HEARTBEAT_MS,
 	isTerminal,
 	orientation,
 	RESULT_ENTRY,
@@ -25,7 +24,6 @@ import {
 } from "../store/index.ts";
 import { ActivityTracker } from "./activity.ts";
 import { createRootInput } from "./identity.ts";
-import { InboxPump } from "./inbox.ts";
 import { insertAtRunPosition } from "./orientation-position.ts";
 
 interface AssistantLike {
@@ -62,14 +60,9 @@ export function agentStartPatch(): { summary: undefined; note: undefined } {
 const log = (message: string) => process.stderr.write(`[agents] ${message}\n`);
 
 /** Run a handler body; never let an exception escape into pi. */
-function safe<A extends unknown[]>(fn: (...args: A) => unknown): (...args: A) => void {
-	return (...args: A) => {
-		try {
-			const result = fn(...args);
-			if (result instanceof Promise) result.catch((error) => log(String(error)));
-		} catch (error) {
-			log(String(error));
-		}
+function safe<A extends unknown[]>(fn: (...args: A) => unknown): (...args: A) => Promise<void> {
+	return async (...args: A) => {
+		try { await fn(...args); } catch (error) { log(String(error)); }
 	};
 }
 
@@ -79,11 +72,12 @@ export function registerRuntime(host: AgentsHost): void {
 	let id: string | undefined;
 	let ctx: ExtensionContext | undefined;
 	let tracker: ActivityTracker | undefined;
-	let pump: InboxPump | undefined;
-	let heartbeat: ReturnType<typeof setInterval> | undefined;
-	let runTimer: ReturnType<typeof setTimeout> | undefined;
+	const connection = host.connection;
+	let parking = false;
+	let shuttingDown = false;
+	const flush = async () => { await connection?.flush(); };
+	const receipt = async () => { if (id) { await flush(); await connection?.request("receipt", { id }); } };
 	let lastRun: AssistantLike | undefined;
-	let sessionStartedAt = 0;
 	/** A `/agent-done` request is outstanding: the next settled run ends it (see `settleDone`). */
 	let pendingDone = false;
 
@@ -106,7 +100,7 @@ export function registerRuntime(host: AgentsHost): void {
 		if (!ctx || !id) return;
 		if (message.kind === "control") {
 			// A control message sent while this agent was dead must not fire on resume.
-			if (message.ts < sessionStartedAt) return;
+			pi.appendEntry("agents.receipt", { id: message.id });
 			if (message.control === "interrupt") ctx.abort();
 			else if (message.control === "done") requestDone(message);
 			else if (message.control === "stop") {
@@ -125,7 +119,9 @@ export function registerRuntime(host: AgentsHost): void {
 			pi.appendEntry(RESULT_ENTRY, resultClaim(message.from, status, message.body, Date.now()));
 		}
 		if (message.deliver === "ui") {
+			pi.appendEntry("agents.receipt", { id: message.id });
 			if (ctx.hasUI) ctx.ui.notify(`[${message.from}] ${message.kind}: ${message.body.slice(0, 200)}`, "info");
+			await receipt();
 			return;
 		}
 		// A custom message reaches the model like user input and wakes an idle agent, but the
@@ -167,14 +163,15 @@ export function registerRuntime(host: AgentsHost): void {
 		setStatus(status, { summary: summary || undefined });
 		const prefix = status === "error" ? "FAILED: " : status === "stopped" ? "STOPPED: " : "";
 		notifyParent(`${prefix}${summary || "(no output)"}`);
-		ctx?.shutdown();
-		// Backstop: pi may linger on open handles after shutdown.
-		setTimeout(() => process.exit(0), 10_000).unref();
+		// The daemon parks this settled runner; no child-owned exit timer or supervisor.
 	}
 
 	pi.on(
 		"session_start",
-		safe((_event, context: ExtensionContext) => {
+		safe(async (_event, context: ExtensionContext) => {
+			await connection?.start();
+			shuttingDown = false;
+			parking = false;
 			ctx = context;
 			host.ctx = context;
 
@@ -182,50 +179,57 @@ export function registerRuntime(host: AgentsHost): void {
 			// root is created for the first session that has no record. Resuming a session finds
 			// its agent again.
 			const sessionId = context.sessionManager.getSessionId();
+			if (process.env.PI_AGENTS_ID && process.env.PI_AGENTS_ID !== sessionId) {
+				context.shutdown(); throw new Error("Managed session identity mismatch; refusing to register a root or write another session");
+			}
 			let input = store.readInput(sessionId);
 			if (!input || !input.parent) {
 				if (context.mode !== "tui") return; // headless one-offs are not agents
 				input ??= createRootInput(store, context);
 			}
-			try {
-				store.acquireLock(input.id);
-			} catch (error) {
-				log(`runtime disabled: ${String(error)}`);
-				return;
-			}
+			await flush();
 			id = input.id;
 			host.identity = input;
-			sessionStartedAt = Date.now();
 
-			store.writeState(id, {
-				status: "idle",
-				sessionFile: context.sessionManager.getSessionFile(),
-				summary: undefined,
-			});
 			tracker = new ActivityTracker({ store, id });
-			tracker.heartbeat();
-			heartbeat = setInterval(() => tracker?.heartbeat(), HEARTBEAT_MS);
-			heartbeat.unref?.();
-
-			pump = new InboxPump({ store, id, deliver });
-			pump.start();
-
-			if (!input.interactable && input.runTimeoutMs !== undefined) {
-				const runStart = store.readState(input.id)?.runStartedAt ?? sessionStartedAt;
-				const remaining = Math.max(1000, runStart + input.runTimeoutMs - Date.now());
-				runTimer = setTimeout(
-					safe(() => {
-						setStatus("timed-out", { summary: `whole-run limit of ${Math.round(input.runTimeoutMs! / 1000)}s exceeded` });
-						notifyParent(`TIMED OUT after ${Math.round(input.runTimeoutMs! / 1000)}s`);
-						context.abort();
-						context.shutdown();
-					}),
-					remaining,
-				);
-				runTimer.unref?.();
-			}
+			connection?.removeAllListeners("mail");
+			connection?.removeAllListeners("park");
+			connection?.removeAllListeners("stop");
+			connection?.removeAllListeners("disconnect");
+			connection?.on("mail", (message: AgentMessage) => { void deliver(message).then(receipt).catch(error => log(String(error))); });
+			connection?.on("park", () => { void (async () => {
+				if (shuttingDown) return;
+				if (!ctx?.isIdle()) { await connection.request("park-declined"); return; }
+				await receipt();
+				if (await connection.request("park-ready")) { parking = true; ctx.shutdown(); }
+			})().catch(error => log(String(error))); });
+			connection?.on("stop", () => { ctx?.abort(); ctx?.shutdown(); });
+			connection?.on("disconnect", () => {
+				if (shuttingDown) return;
+				if (!host.identity?.parent) {
+					host.canSpawn = false;
+					ctx?.ui.notify("Agents runtime disconnected; this human session remains open. Reload to reconnect agent controls.", "warning");
+					return;
+				}
+				// Managed writers fail closed, including attached ones. This is interrupted work,
+				// NOT safe parking: the daemon fences it and requires explicit recovery.
+				ctx?.ui.notify("Agents runtime disconnected. Interrupting this runner; explicit recovery is required.", "error");
+				ctx?.abort(); ctx?.shutdown();
+			});
+			await connection?.request("hello", { id, token: process.env.PI_AGENTS_OWNER, pid: process.pid,
+				sessionFile: context.sessionManager.getSessionFile() }).catch(error => {
+					host.identity = undefined; context.shutdown(); throw error;
+				});
 		}),
 	);
+
+	pi.on("session_before_compact", safe(async () => { if (id) await connection?.request("activity", { busy: true }); }));
+	const compactionFinished = () => { setImmediate(() => {
+		if (id && ctx?.isIdle()) void connection?.request("activity", { busy: false }).catch(error => log(String(error)));
+	}); };
+	pi.on("session_compact", compactionFinished);
+	pi.on("session_compact_failed", compactionFinished);
+	pi.on("cache_warming_decision", () => host.identity?.parent ? { action: "stop" as const } : undefined);
 
 	// Model-facing orientation: what this agent has going. Computed once per run and appended as
 	// the last message of each LLM call (not persisted, not in the system prompt): the cached
@@ -263,13 +267,8 @@ export function registerRuntime(host: AgentsHost): void {
 
 	pi.on(
 		"session_shutdown",
-		safe((event: { reason?: string }) => {
-			pump?.stop();
-			pump = undefined;
-			if (heartbeat) clearInterval(heartbeat);
-			heartbeat = undefined;
-			if (runTimer) clearTimeout(runTimer);
-			runTimer = undefined;
+		safe(async (event: { reason?: string }) => {
+			shuttingDown = true;
 			tracker?.reset();
 			orientationText = undefined;
 			pendingDone = false;
@@ -279,15 +278,16 @@ export function registerRuntime(host: AgentsHost): void {
 				if (event.reason !== "reload") {
 					const status = currentStatus();
 					if (host.identity?.parent === null) setStatus("dormant");
-					else if (status && !isTerminal(status)) setStatus("stopped");
+					else if (!parking && status && !isTerminal(status)) setStatus("stopped");
 				}
-				store.releaseLock(id);
+				await flush();
 			}
 			id = undefined;
 			ctx = undefined;
 			host.identity = undefined;
 			host.ctx = undefined;
 			host.canSpawn = false;
+			await connection?.stop();
 		}),
 	);
 
@@ -316,7 +316,8 @@ export function registerRuntime(host: AgentsHost): void {
 
 	pi.on(
 		"agent_start",
-		safe(() => {
+		safe(async () => {
+			await connection?.request("activity", { busy: true });
 			lastRun = undefined;
 			const status = currentStatus();
 			// `done` can be left again: a live interactable agent may be given more work.
@@ -331,6 +332,9 @@ export function registerRuntime(host: AgentsHost): void {
 	pi.on(
 		"message_end",
 		safe((event: { message?: AssistantLike }) => {
+			// Pi appends message_end AFTER extension handlers return. Check disk on the next event-loop turn,
+			// never acknowledge sendMessage's volatile queue as persisted delivery.
+			setImmediate(() => { void receipt().catch(error => log(String(error))); });
 			if (event.message?.role === "assistant") {
 				tracker?.modelEnd();
 				lastRun = event.message;
@@ -367,8 +371,9 @@ export function registerRuntime(host: AgentsHost): void {
 
 	pi.on(
 		"agent_settled",
-		safe((event: { aborted?: boolean }) => {
+		safe(async (event: { aborted?: boolean }) => {
 			if (!id) return;
+			try {
 			tracker?.reset();
 			const status = currentStatus();
 			const outcome = settleDone({ pending: pendingDone, aborted: Boolean(event.aborted), status, failed: lastRun?.stopReason === "error" });
@@ -392,6 +397,10 @@ export function registerRuntime(host: AgentsHost): void {
 				return;
 			}
 			if (status === "working" || status === "error") setStatus("idle");
+			} finally {
+				await receipt();
+				await connection?.request("activity", { busy: false });
+			}
 		}),
 	);
 }
