@@ -1,11 +1,11 @@
 /** SQLite is the runtime authority. Only the daemon opens a writable connection. */
 import { DatabaseSync } from "node:sqlite";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentInput, AgentMessage, AgentRecord, AgentState, Store } from "../store/index.ts";
 
-export const runtimeHome = () => process.env.PI_AGENTS_HOME?.trim() || path.join(os.homedir(), ".pi", "agents");
+import { runtimeHome } from "../store/store.ts";
+export { runtimeHome } from "../store/store.ts";
 export type Residency = "parked" | "starting" | "live" | "parking" | "blocked";
 export interface Owner { token: string; pid?: number; startedAt?: string; master?: number; settled: boolean }
 export interface RuntimeRow { residency: Residency; owner?: Owner }

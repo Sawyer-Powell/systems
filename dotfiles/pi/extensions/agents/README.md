@@ -110,15 +110,17 @@ Do not end()/shutdown() the inherited lease while its client lives.
 
 - Node22.23+ (`node:sqlite`, TypeScript stripping), Pi with `agent_settled` and tool `terminate`
   (local host Pi1.4.0), dtach0.9 `-N` and inherited descriptor behavior.
-- `PI_AGENTS_HOME`: private runtime home, default~/.pi/agents. **Use a new temporary home**
-  for this revised six-state runtime. No migration/compatibility with old live state.
+- `PI_AGENTS_HOME`: private runtime home, default `~/.pi/agents-v2`, separate from legacy
+  `~/.pi/agents`. Explicit overrides retain their existing behavior. Use fresh temporary
+  homes for trials; no copying, migration or deletion of old live state.
 - `PI_AGENTS_IDLE_MS`: default60000; `PI_AGENTS_MAX_LIVE`: default8 managed background
   admissions. Attach/recovery may exceed the cap; active/attached work is not killed to
   enforce it. `PI_AGENTS_NODE`/`PI_AGENTS_PI` choose native executables.
 - `PI_AGENTS_PROFILES`: explicit markdown profile directory override. Otherwise profiles
   load from Pi's agent-dir/agents, as before. The source worker/intuition/scout prompts and
-  source APPEND_SYSTEM.md use the new tools. **Existing installed/custom profiles and system
-  prompts are not rewritten or edited automatically.** For isolated use set this override
+  source APPEND_SYSTEM.md use the new tools. Canonical source integration updates the existing
+  Home Manager source symlinks; copied/custom profiles and prompts are not rewritten.
+  For isolated use set this override
   to this checkout's `dotfiles/pi/agents` and use a fresh `PI_CODING_AGENT_DIR`; do not reuse
   installed old report_done/ask_user prompts. Review custom prompts before later deployment.
 - Model tiers/fallback/maxDepth, lineage authorization, claims and orientation remain.
@@ -136,6 +138,38 @@ lock and is kernel-released on crash. Never remove a live lock/store to force re
 
 Arbitrary background jobs/escaped shell groups are not made durable by parking; safe wrap-up
 still reports/stops owned jobs. No transcript/message/event retention policy is implemented.
+
+## Official source cutover
+
+Home Manager already links `~/.pi/agent/{settings.json,APPEND_SYSTEM.md,agents,extensions,...}`
+with `mkOutOfStoreSymlink` into `~/repos/systems/dotfiles/pi`. Canonical source changes are
+available immediately through those links; a new normal Pi loads them without a rebuild or
+`PI_AGENTS_PROFILES` override. Use a fresh normal session with trial overrides unset. Old
+agents/inboxes remain in their old home and are not automatically imported or displayed.
+Keep separate trial panes/homes isolated until the user closes them.
+
+**Old human roots must reload or start fresh before spawning more agents through changed
+canonical sources. Do not reload legacy managed workers.** Startup checks only that session's
+legacy `input.json`/`lock` in the old default and selected home, before daemon/root creation.
+Legacy managed workers without the new identity/token are refused; a different live or unknown
+legacy lock owner is refused without changing its lock. Same-PID human root reload or no live
+old owner is allowed. This is a conservative one-time cutover check, not migration or an atomic
+cross-runtime lock handoff; prefer a fresh session rather than concurrently resuming old ones.
+It shuts down only the rejected new invocation, never other legacy processes.
+
+Current Node22.23.1 already meets runtime requirements: source cutover can be tried before
+Nix activation using that existing Node. `home/sawyer/default.nix` declares Node24 LTS and
+pins `PI_AGENTS_NODE` in session variables and managed bash/zsh initialization. A Nix switch
+is needed only to realize that package/pin, not to activate source files. On the audited
+work-macbook, existing `switch` alias expands to:
+
+```sh
+sudo darwin-rebuild switch --flake /Users/sawyerpowell/repos/systems#work-macbook
+```
+
+No flake update is needed. After a user-run switch, open a fresh shell to pick up the pin;
+do not export an unrealized future Nix path beforehand. Do not stop/reload existing agents
+as part of activation. No source integration, Nix switch or trial reload is implied by tests.
 
 ## Verification
 

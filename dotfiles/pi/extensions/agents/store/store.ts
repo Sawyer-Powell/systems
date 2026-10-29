@@ -1,5 +1,6 @@
 /**
- * The agent store: every read and write of `~/.pi/agents`.
+ * Former file-store fixture adapter; production authority is central SQLite.
+ * Uses the same isolated runtime-home resolver; never defaults to legacy state.
  *
  * Pure Node (no pi imports) so it is unit-testable and usable from a CLI.
  * Writers follow the single-writer rule documented in `types.ts`.
@@ -131,7 +132,10 @@ export interface Store {
 	readInbox(id: string, after?: string): AgentMessage[];
 }
 
-export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() || path.join(os.homedir(), ".pi", "agents")): Store {
+/** Pure path resolution: no directory/database creation or legacy-state migration. */
+export const runtimeHome = () => process.env.PI_AGENTS_HOME?.trim() || path.join(os.homedir(), ".pi", "agents-v2");
+
+export function createStore(home: string = runtimeHome()): Store {
 	const dirOf = (id: string) => {
 		assertId(id);
 		return path.join(home, id);

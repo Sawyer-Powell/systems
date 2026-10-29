@@ -3,6 +3,22 @@
 Operational commands and isolated profile/config boundary: [README.md](README.md).
 No new chat TUI, compatibility migration or per-agent supervisor.
 
+Official runtime defaults to `~/.pi/agents-v2`; `PI_AGENTS_HOME` still explicitly overrides.
+Legacy `~/.pi/agents` metadata/inboxes/processes are not copied, imported, deleted or culled.
+Before daemon/root creation, an unmanaged session performs a startup-only, session-ID-local
+legacy input/lock check in the old default and selected home: legacy managed input refuses;
+unknown ownership or another live PID refuses; same-PID human reload or no live owner allows.
+No legacy lock is changed and no recurring legacy scan is introduced. This does not claim an
+atomic cross-runtime handoff: prefer fresh sessions, and reload old human roots before new
+spawns; never reload legacy managed workers into this extension.
+
+Existing Home Manager out-of-store links target canonical `~/repos/systems/dotfiles/pi`.
+New normal Pi loads updated source/prompts/profiles immediately, without a profiles override
+or Nix rebuild. Nix switch separately realizes the declared Node24 package/`PI_AGENTS_NODE`
+shell pin; current Node22.23.1 is valid before switching. No flake update is required. Existing
+loaded sessions/trials remain untouched; normal fresh sessions must unset trial home/config
+and profile overrides. See README for current host switch command.
+
 ## Independent concerns
 
 Workflow has exactly six states: **working, idle, waiting-on-parent, needs-you, blocked,

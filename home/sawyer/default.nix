@@ -33,6 +33,7 @@ in
   home.packages = with pkgs; [
     zellij
     dtach # PTY holder for attachable pi agents (extensions/agents)
+    nodejs_24 # LTS: native TypeScript and node:sqlite for central pi agents
     btop
     ripgrep
     fd
@@ -106,6 +107,7 @@ in
   home.sessionVariables = {
     EDITOR = "nvim";
     VISUAL = "nvim";
+    PI_AGENTS_NODE = "${pkgs.nodejs_24}/bin/node";
     OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = "true";
   } // lib.optionalAttrs isPersonal {
     SSH_AUTH_SOCK = if pkgs.stdenv.isDarwin then
@@ -181,6 +183,7 @@ in
       alias vi=nvim
       alias poly="polytoken"
       alias ask="polytoken exec"
+      export PI_AGENTS_NODE="${pkgs.nodejs_24}/bin/node"
     '';
   };
 
@@ -198,6 +201,7 @@ in
       alias vi=nvim
       alias poly="polytoken"
       alias ask="polytoken exec"
+      export PI_AGENTS_NODE="${pkgs.nodejs_24}/bin/node"
       eval "$(direnv hook zsh)"
     '';
   };

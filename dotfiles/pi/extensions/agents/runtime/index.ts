@@ -1,7 +1,6 @@
 /**
- * In-agent plumbing, loaded in every agent process: lock, state, heartbeat,
- * activity tracking, inbox delivery, control messages, step-timeout guard, and
- * terminal-state handling. See SPEC.md.
+ * Native Pi lifecycle bridge: central state/mail, activity, durable receipts,
+ * handoffs and safe parking. Loaded in every agent process. See SPEC.md.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentsHost } from "../host.ts";
@@ -23,6 +22,7 @@ import {
 } from "../store/index.ts";
 import { ActivityTracker } from "./activity.ts";
 import { createRootInput } from "./identity.ts";
+import { legacyStartupRefusal } from "./cutover.ts";
 import { insertAtRunPosition } from "./orientation-position.ts";
 
 interface AssistantLike {
@@ -150,6 +150,15 @@ export function registerRuntime(host: AgentsHost): void {
 	pi.on(
 		"session_start",
 		safe(async (_event, context: ExtensionContext) => {
+			const sessionId = context.sessionManager.getSessionId();
+			const refusal = legacyStartupRefusal(sessionId, store.home);
+			if (refusal) {
+				host.identity = undefined;
+				host.canSpawn = false;
+				context.shutdown();
+				context.ui.notify(refusal, "error");
+				throw new Error(refusal);
+			}
 			await connection?.start();
 			shuttingDown = false;
 			parking = false;
@@ -161,10 +170,6 @@ export function registerRuntime(host: AgentsHost): void {
 			// Agent id === pi session id: a child was launched with `--session-id <agent id>`; a
 			// root is created for the first session that has no record. Resuming a session finds
 			// its agent again.
-			const sessionId = context.sessionManager.getSessionId();
-			if (process.env.PI_AGENTS_ID && process.env.PI_AGENTS_ID !== sessionId) {
-				context.shutdown(); throw new Error("Managed session identity mismatch; refusing to register a root or write another session");
-			}
 			let input = store.readInput(sessionId);
 			if (!input || !input.parent) {
 				if (context.mode !== "tui") return; // headless one-offs are not agents
@@ -259,7 +264,7 @@ export function registerRuntime(host: AgentsHost): void {
 			host.soleYieldCallId = undefined;
 			if (id) {
 				// Only /reload continues as this same agent. Any other shutdown unloads the session:
-				// a root is then dormant (resuming the session wakes it), a child is stopped.
+				// a root becomes unavailable/idle until manual reconnect; a child is stopped.
 				if (event.reason !== "reload") {
 					const status = currentStatus();
 					if (host.identity?.parent === null) setStatus("idle");
