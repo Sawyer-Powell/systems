@@ -166,10 +166,10 @@ describe("dormant root mailbox", () => {
 		const loaded = new InboxPump({ store: tmp.store, id: ID, deliver: () => {} });
 		await loaded.pump(); // session loaded: cursor advances
 		assert.equal(tmp.store.readState(ID)?.lastDelivered, first.id);
-		tmp.store.writeState(ID, { status: "dormant" }); // session unloaded: no pump running
+		tmp.store.writeState(ID, { status: "idle" }); // unloaded root is available; residency is separate
 		tmp.store.send({ from: "user", to: ID, kind: "instruction", body: "while dormant 1", deliver: "context", ts: 2000 });
 		tmp.store.send({ from: "user", to: ID, kind: "instruction", body: "while dormant 2", deliver: "context", ts: 3000 });
-		assert.equal(tmp.store.record(ID)?.status, "dormant");
+		assert.equal(tmp.store.record(ID)?.status, "idle");
 		tmp.store.writeState(ID, { status: "idle" }); // session_start on resume
 		const seen: string[] = [];
 		await new InboxPump({ store: tmp.store, id: ID, deliver: (m) => void seen.push(m.body) }).pump();
@@ -179,21 +179,21 @@ describe("dormant root mailbox", () => {
 
 describe("resumedFromWaiting", () => {
 	it("a non-ask tool starting while waiting means the agent is working again", () => {
-		for (const status of ["waiting-on-user", "waiting-on-parent"] as const) {
+		for (const status of ["waiting-on-parent"] as const) {
 			assert.equal(resumedFromWaiting("bash", status), true);
 			assert.equal(resumedFromWaiting("read", status), true);
 		}
 	});
 	it("the ask tools themselves never resume", () => {
-		for (const status of ["waiting-on-user", "waiting-on-parent"] as const) {
-			assert.equal(resumedFromWaiting("ask_user", status), false);
+		for (const status of ["needs-you", "waiting-on-parent"] as const) {
+			assert.equal(resumedFromWaiting("yield", status), false);
 			assert.equal(resumedFromWaiting("ask_parent", status), false);
 		}
 	});
 	it("other statuses are untouched", () => {
-		for (const status of ["working", "idle", "done", "error", undefined] as const) {
+		for (const status of ["working", "idle", "needs-you", "blocked", "archived", undefined] as const) {
 			assert.equal(resumedFromWaiting("bash", status), false);
-			assert.equal(resumedFromWaiting("ask_user", status), false);
+			assert.equal(resumedFromWaiting("yield", status), false);
 		}
 	});
 });

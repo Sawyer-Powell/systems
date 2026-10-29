@@ -86,7 +86,7 @@ export function createSupervisor(host: AgentsHost): Supervisor {
 			if (!input) throw new Error(`Unknown agent ${id}.`);
 			if (input.role === "main") throw new Error("A root session cannot be resumed; start a new pi instead.");
 			const record = store.record(id);
-			const message = record?.residency === "parked" ? instruction : resumeMessage(input, record?.status ?? "lost", record?.state?.summary, instruction);
+			const message = record?.residency === "parked" && record.status !== "blocked" ? instruction : resumeMessage(input, record?.status ?? "blocked", record?.state?.reason ?? record?.state?.summary, instruction);
 			await command("resume", { id, instruction: message });
 		},
 

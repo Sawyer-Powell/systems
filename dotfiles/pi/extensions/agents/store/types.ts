@@ -1,16 +1,9 @@
-/**
- * Contracts for the agent store: plain files under `~/.pi/agents/<id>/`.
- *
- *   input.json   immutable; created once, exclusively, by the creator
- *   state.json   mutable; written only by the agent itself (or by whoever holds
- *                the lock of a dead agent)
- *   inbox/       one JSON file per message, named `<message id>.json`
- *   log          stdout/stderr of the agent process
- *   lock         pid + process start time; presence of a live owner = liveness
- *   pty.sock     dtach socket (interactable agents only)
+/** Shared six-state metadata contracts. The daemon owns SQLite writes; native Pi alone
+ * writes its conversation. Agent directories hold session JSONL, native PTY socket and log.
+ * The historical file-store fixture reuses these types but is not runtime supervision.
  */
 
-/** Resolved launch profile, frozen into `input.json` so a respawn is identical. */
+/** Resolved launch profile, frozen in agent metadata so a respawn is identical. */
 export interface ProfileSnapshot {
 	name: string;
 	modelId: string;
@@ -48,20 +41,11 @@ export interface AgentInput {
 	forkedFrom?: string;
 }
 
-export type AgentStatus =
-	| "starting"
-	| "idle" // alive, no run in progress, waiting for messages
-	| "working"
-	| "dormant" // root whose session is not loaded in any pi; not terminal, its mailbox keeps accumulating
-	| "waiting-on-parent"
-	| "waiting-on-user"
-	| "done"
-	| "stopped"
-	| "error"
-	| "timed-out";
+export const AGENT_STATUSES = ["working", "idle", "waiting-on-parent", "needs-you", "blocked", "archived"] as const;
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
-/** Statuses after which the process is expected to be gone. */
-export const TERMINAL_STATUSES: readonly AgentStatus[] = ["done", "stopped", "error", "timed-out"];
+/** States that must not autonomously continue; process residency is independent. */
+export const TERMINAL_STATUSES: readonly AgentStatus[] = ["blocked", "archived"];
 
 export const isTerminal = (status: AgentStatus | EffectiveStatus): boolean =>
 	(TERMINAL_STATUSES as readonly string[]).includes(status);
@@ -90,13 +74,19 @@ export interface AgentState {
 	/** When `status` last changed. */
 	since: number;
 	sessionFile?: string;
-	/** Final or latest summary, set on `report_done`. */
+	/** Latest work/handoff summary. Completion is a message, not a workflow state. */
 	summary?: string;
+	/** Why a blocked execution cannot safely continue. */
+	reason?: string;
+	/** Latest addressed handoff, retained independently of process residency. */
+	handoff?: { to: "parent" | "user"; recipient: string; messageId: string; at: number };
+	/** Explicit human wrap-up request; permits a non-interactable worker to yield to that human. */
+	yieldRequested?: boolean;
 	/** Message the agent is waiting on an answer to. */
 	waitingOn?: { messageId: string };
 	/** Highest inbox message id already delivered into the session. */
 	lastDelivered?: string;
-	/** Start of the current process run (launch or resume); whole-run limits count from here. */
+	/** Start of the current autonomous run; whole-run limits count from here. */
 	runStartedAt?: number;
 	/** Self-reported one-line progress note (`set_status`), at most NOTE_MAX_CHARS. Model-written free text. */
 	note?: string;
@@ -107,12 +97,12 @@ export type MessageKind =
 	| "instruction" // parent/user -> agent: do this
 	| "question" // child -> parent or user
 	| "answer" // reply to a question
-	| "result" // child -> parent: finished
+	| "yield" // work-completed handoff; parent delivery always invokes its model
 	| "stall" // watchdog -> parent: a child is stuck
 	| "control" // interrupt | stop
 	| "info"; // anything else, e.g. review comments
 
-export type ControlAction = "interrupt" | "stop" | "done"; // done: wrap up, report, mark yourself done (`/agent-done`)
+export type ControlAction = "interrupt" | "stop" | "request-yield";
 
 export interface AgentMessage {
 	/** Sortable: `<13-digit ms timestamp>-<random>`. Also the filename stem. */
@@ -130,7 +120,7 @@ export interface AgentMessage {
 }
 
 /** How the outside world sees an agent. */
-export type EffectiveStatus = AgentStatus | "lost";
+export type EffectiveStatus = AgentStatus;
 
 export interface AgentRecord {
 	input: AgentInput;

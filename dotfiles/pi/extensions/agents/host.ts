@@ -11,6 +11,10 @@ export interface AgentsHost {
 	pi: ExtensionAPI;
 	store: Store;
 	connection?: AgentConnection;
+	/** Local request only, not an accepted handoff. Runtime commits it after the tool batch completes. */
+	pendingYield?: { to: "parent" | "user"; message: string; messageId: string };
+	/** Set from the finalized assistant message, before any tool in that batch executes. */
+	soleYieldCallId?: string;
 	/** interactable && depth < settings.agents.maxDepth. False until session_start (settings are unreadable while loading). */
 	canSpawn: boolean;
 	/** This process's own agent. Set by `runtime` on session_start; undefined before. */

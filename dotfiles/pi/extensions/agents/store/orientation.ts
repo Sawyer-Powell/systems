@@ -40,7 +40,7 @@ export function orientation(store: Store, selfId: string, now: number, claims: M
 	const { unknown, otherBranch } = reconcileClaims(claims, children, exists);
 	const tag = (id: string) => (otherBranch.has(id) ? " [other branch]" : "");
 	const recent = (record: AgentRecord) => record.state !== undefined && now - record.state.since < ORIENTATION_RECENT_MS;
-	const isLive = (record: AgentRecord) => record.alive || record.status === "starting";
+	const isLive = (record: AgentRecord) => record.alive || record.residency === "starting";
 	const head = (record: AgentRecord) => `${record.input.id} ${record.input.role}`;
 
 	const attention: string[] = [];
@@ -49,17 +49,20 @@ export function orientation(store: Store, selfId: string, now: number, claims: M
 	let inbox: ReturnType<Store["readInbox"]> | undefined;
 	for (const child of children) {
 		const { state } = child;
+		if (child.status === "archived") continue;
 		const stall = stallOf(child, now);
 		if (child.status === "waiting-on-parent") {
 			inbox ??= store.readInbox(selfId);
 			const question = inbox.find((message) => message.id === state?.waitingOn?.messageId);
 			attention.push(`! ${head(child)} is waiting on you${question ? `: "${flat(question.body.replaceAll('"', "'"), QUESTION_CHARS)}"` : ""}${tag(child.input.id)}`);
+		} else if (child.status === "needs-you" || child.status === "blocked") {
+			attention.push(`! ${head(child)} ${child.status} · ${flat(state?.reason ?? state?.summary ?? (child.status === "blocked" ? "Execution unavailable" : "Human attention requested"), SUMMARY_CHARS)}${tag(child.input.id)}`);
 		} else if (stall) {
 			attention.push(`! ${head(child)} ${stall.kind}${tag(child.input.id)}`);
 		} else if (isLive(child)) {
 			const activity = state?.note ?? (child.status === "working" ? state?.activity.inFlight?.summary : undefined);
 			live.push(`- ${head(child)} ${child.status}${activity ? ` · ${flat(activity, OBJECTIVE_CHARS)}` : ""} · ${flat(child.input.objective, OBJECTIVE_CHARS)}${tag(child.input.id)}`);
-		} else if (isTerminal(child.status) && recent(child)) {
+		} else if (child.status === "idle" && state?.handoff && recent(child)) {
 			const summary = state?.summary ? ` · ${flat(state.summary, SUMMARY_CHARS)}` : "";
 			finished.push(`- ${head(child)} ${child.status}${summary}${tag(child.input.id)}`);
 		}
@@ -68,7 +71,7 @@ export function orientation(store: Store, selfId: string, now: number, claims: M
 
 	// Agents of the session this one was forked from: shown, never controllable from here.
 	const inherited = (self.forkedFrom ? store.descendants(self.forkedFrom) : [])
-		.filter((record) => !isTerminal(record.status) || recent(record))
+		.filter((record) => record.status !== "archived")
 		.map((record) => `- [inherited, read-only] ${head(record)} ${record.status} · ${flat(record.input.objective, OBJECTIVE_CHARS)}`);
 
 	const lines = [...attention, ...live, ...finished, ...lost, ...inherited];

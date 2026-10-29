@@ -8,7 +8,7 @@ import type { Supervisor } from "../supervisor/index.ts";
 import { NOTE_MAX_CHARS } from "../store/index.ts";
 import { describeRecord, registerTools } from "./index.ts";
 
-type Tool = { name: string; execute: (id: string, params: any) => Promise<{ content: { text: string }[] }> };
+type Tool = { name: string; execute: (id: string, params: any) => Promise<{ content: { text: string }[]; terminate?: boolean }> };
 
 const tmp = useTempStore("agents-tools-");
 
@@ -16,6 +16,7 @@ function harness(identity: AgentInput, canSpawn: boolean, supervisor?: Partial<S
 	const tools = new Map<string, Tool>();
 	const startHandlers: Array<() => void> = [];
 	const entries: Array<{ customType: string; data: unknown }> = [];
+	const requests: Array<{ op: string; args?: any }> = [];
 	const host = {
 		pi: {
 			registerTool: (t: Tool) => tools.set(t.name, t),
@@ -23,13 +24,22 @@ function harness(identity: AgentInput, canSpawn: boolean, supervisor?: Partial<S
 			on: (event: string, handler: () => void) => void (event === "session_start" && startHandlers.push(handler)),
 		},
 		store: tmp.store,
+		connection: {
+			flush: async () => { requests.push({ op: "flush" }); },
+			request: async (op: string, args: any) => {
+				requests.push({ op, args });
+				if (op === "send") return tmp.store.send(args.message);
+				return { id: args.messageId };
+			},
+		},
 		canSpawn,
+		soleYieldCallId: "call-1",
 		identity,
 		ctx: undefined,
 	} as unknown as AgentsHost;
 	registerTools(host, (supervisor ?? {}) as Supervisor);
 	for (const handler of startHandlers) handler();
-	return Object.assign(tools, { entries });
+	return Object.assign(tools, { entries, requests, host });
 }
 const run = async (tools: Map<string, Tool>, name: string, params: object) => (await tools.get(name)!.execute("id", params)).content[0]!.text;
 
@@ -43,11 +53,11 @@ describe("registration gates", () => {
 	it("root gets send_message and spawn tools only", () => {
 		const names = [...harness(mk("main.root.0001", null), true).keys()];
 		assert.ok(names.includes("send_message") && names.includes("spawn_agent") && names.includes("list_agents"));
-		assert.ok(!names.includes("ask_parent") && !names.includes("report_done") && !names.includes("ask_user"));
+		assert.ok(!names.includes("ask_parent") && !names.includes("yield") && !names.includes("ask_user"));
 	});
 	it("non-interactable leaf gets no ask_user and no spawn", () => {
 		const names = [...harness(tmp.store.readInput("scout.s.0003")!, false).keys()];
-		assert.deepEqual(names.sort(), ["ask_parent", "report_done", "send_message", "set_status"]);
+		assert.deepEqual(names.sort(), ["ask_parent", "send_message", "set_status", "yield"]);
 	});
 	it("a child registers exactly the tools agentToolNames lists for its capabilities", () => {
 		for (const [interactable, canSpawn] of [[false, false], [true, false], [true, true]] as const) {
@@ -55,8 +65,10 @@ describe("registration gates", () => {
 			assert.deepEqual([...harness(identity, canSpawn).keys()].sort(), agentToolNames(interactable, canSpawn).sort());
 		}
 	});
-	it("interactable child gets ask_user", () => {
-		assert.ok(harness(tmp.store.readInput("worker.a.0002")!, true).has("ask_user"));
+	it("interactable child gets yield without legacy completion tools", () => {
+		const tools = harness(tmp.store.readInput("worker.a.0002")!, true);
+		assert.ok(tools.has("yield"));
+		assert.ok(!tools.has("ask_user") && !tools.has("report_done"));
 	});
 });
 
@@ -71,12 +83,17 @@ describe("flows", () => {
 		assert.equal(state?.status, "waiting-on-parent");
 		assert.equal(state?.waitingOn?.messageId, q?.id);
 	});
-	it("report_done sets done and notifies a root parent via ui, a nested parent via context", async () => {
-		await run(harness(tmp.store.readInput("worker.a.0002")!, true), "report_done", { summary: "did it" });
-		assert.equal(tmp.store.readState("worker.a.0002")?.status, "done");
-		assert.equal(tmp.store.readInbox("main.root.0001")[0]?.deliver, "ui");
-		await run(harness(tmp.store.readInput("scout.s.0003")!, false), "report_done", { summary: "found it" });
-		assert.equal(tmp.store.readInbox("worker.a.0002")[0]?.deliver, "context");
+	it("yield requests boundary handoff without claiming early durable acceptance", async () => {
+		for (const to of ["parent", "user"] as const) {
+			const tools = harness(tmp.store.readInput("worker.a.0002")!, true);
+			await assert.rejects(tools.get("yield")!.execute("mixed-call", { to, message: "review ready" }), /call yield by itself/);
+			assert.equal(tools.host.pendingYield, undefined);
+			assert.equal(tools.requests.length, 0);
+			const result = await tools.get("yield")!.execute("call-1", { to, message: "review ready" });
+			assert.equal(result.terminate, true);
+			assert.deepEqual(tools.requests.map(r => r.op), ["flush"]);
+			assert.deepEqual(tools.host.pendingYield, { to, message: "review ready", messageId: "yield:worker.a.0002:call-1" });
+		}
 	});
 	it("send_message resolves parent, blocks siblings", async () => {
 		tmp.store.create(mk("worker.b.0004", "main.root.0001"));
@@ -129,19 +146,18 @@ describe("set_status", () => {
 		assert.equal(note(), undefined);
 	});
 	it("never changes status or sends a message", async () => {
-		tmp.store.writeState(ME, { status: "waiting-on-user", summary: "q?" });
+		tmp.store.writeState(ME, { status: "needs-you", summary: "q?" });
 		assert.equal(await run(tools(), "set_status", { note: "waiting on CI" }), "Status set.");
 		const state = tmp.store.readState(ME);
-		assert.equal(state?.status, "waiting-on-user");
+		assert.equal(state?.status, "needs-you");
 		assert.equal(state?.summary, "q?");
 		assert.equal(note(), "waiting on CI");
 		assert.deepEqual(tmp.store.readInbox("main.root.0001"), []);
 		assert.deepEqual(tmp.store.readInbox(ME), []);
 	});
-	it("is cleared by report_done", async () => {
+	it("does not replace a handoff with ordinary progress", async () => {
 		await run(tools(), "set_status", { note: "almost there" });
-		await run(tools(), "report_done", { summary: "done" });
-		assert.equal(note(), undefined);
+		assert.equal(note(), "almost there");
 	});
 });
 

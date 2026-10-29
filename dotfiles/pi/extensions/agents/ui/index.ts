@@ -6,17 +6,17 @@
 import * as fs from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentsHost } from "../host.ts";
-import { type AgentRecord, planDone, resolveAgent, type StallReport, stallOf } from "../store/index.ts";
+import { type AgentRecord, planYield, resolveAgent, type StallReport, stallOf } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 import { stallNotice } from "../supervisor/watchdog.ts";
 import { attach } from "./attach.ts";
 import { createFuzzyList } from "./fuzzy-list.ts";
 import { registerRenderers } from "./render.ts";
-import { type Action, actionsFor, buildRows, lineageText, TRIAGE_WINDOW_MS, triage, widgetLines } from "./model.ts";
+import { type Action, actionsFor, buildRows, lineageText, TRIAGE_GROUPS, triage, widgetLines } from "./model.ts";
 
 const WIDGET_KEY = "agents";
-/** Finished agents leave the compact widget after this long (they stay in /agents). */
-const WIDGET_FINISHED_MAX_AGE_MS = 10 * 60_000;
+/** Old idle rows leave the compact widget; attention/question/blocked rows never age away. */
+const WIDGET_IDLE_MAX_AGE_MS = 10 * 60_000;
 
 function tail(file: string, lines: number): string[] {
 	try {
@@ -66,8 +66,8 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			if (!self) return;
 			const snapshot = host.connection?.widget(self);
 			const { records, ...shared } = load(snapshot?.records);
-			const { needs, working, completed } = triage(records, { ...shared, subtreeOf: self, completedMaxAgeMs: WIDGET_FINISHED_MAX_AGE_MS });
-			const rows = [...needs, ...working, ...completed].filter((row) => row.id !== self);
+			const grouped = triage(records, { ...shared, subtreeOf: self, idleMaxAgeMs: WIDGET_IDLE_MAX_AGE_MS });
+			const rows = TRIAGE_GROUPS.flatMap(group => grouped[group]).filter(row => row.id !== self);
 			ctx.ui.setWidget(WIDGET_KEY, rows.length ? widgetLines(rows, 6, snapshot?.total) : undefined);
 			const record = store.record(self);
 			const parent = record?.input.parent ? store.readInput(record.input.parent) : undefined;
@@ -97,7 +97,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 					const subtreeOf = scope === "subtree" ? host.identity?.id : undefined;
 					return view === "tree"
 						? buildRows(records, { ...shared, subtreeOf, hideFinished: !showFinished })
-						: triage(records, { ...shared, subtreeOf, completedMaxAgeMs: showFinished ? undefined : TRIAGE_WINDOW_MS }).items;
+						: triage(records, { ...shared, subtreeOf, showArchived: showFinished }).items;
 				},
 				scopeToggle: Boolean(host.identity),
 				finishedToggle: true,
@@ -125,7 +125,7 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 	async function attachTo(ctx: ExtensionContext, record: AgentRecord): Promise<void> {
 		const id = record.input.id;
 		const current = store.record(id) ?? record;
-		if (current.residency === "blocked") await supervisor.resume(id, "The user attached to explicitly recover this interrupted session. Re-check in-flight work before acting.");
+		if (current.residency === "blocked" || (current.status === "blocked" && !current.alive)) await supervisor.resume(id, "The user attached to explicitly recover this interrupted session. Re-check in-flight work before acting.");
 		const result = await attach(current, store.ptySocket(id));
 		if (!result.opened) ctx.ui.notify(`Not inside zellij. Run: ${result.command}`, "info");
 	}
@@ -140,30 +140,21 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			...(forkedFrom ? [`forked from ${forkedFrom.name} (${forkedFrom.id})`] : []),
 			...(inherited ? [`inherited, read-only: owned by ${inherited.input.name} (the session this one was forked from)`] : []),
 			`status: ${record.status} · ${record.residency ?? "unknown"}${state?.summary ? ` · ${state.summary.slice(0, 200)}` : ""}`,
+			...(state?.reason ? [`reason: ${state.reason}`] : []),
+			...(state?.handoff ? [`handoff: ${state.handoff.to} (${state.handoff.recipient}) · ${state.handoff.messageId}`] : []),
 			`objective: ${input.objective.slice(0, 300)}`,
 			`model: ${input.profile.modelId} · cwd: ${input.cwd}`,
 			...tail(store.logPath(input.id), 8).map((line) => `log: ${line.slice(0, 160)}`),
 		].join("\n");
 	}
 
-	/**
-	 * `/agent-done` and the "Mark done" action. A live agent is sent `control: "done"` and finishes itself;
-	 * a lost one has no process to ask, so (like kill) its dead state is written here. Returns the message to show.
-	 */
-	async function markDone(record: AgentRecord): Promise<{ text: string; level: "info" | "warning" }> {
-		const id = record.input.id;
-		const current = store.record(id) ?? record; // re-read: the state may have changed since the list was drawn
-		const plan = planDone(current);
-		if (plan.action === "noop") return { text: plan.reason, level: "info" };
+	async function requestYield(record: AgentRecord): Promise<{ text: string; level: "info" | "warning" }> {
+		const current = store.record(record.input.id) ?? record;
+		const plan = planYield(current);
 		if (plan.action === "refuse") return { text: plan.reason, level: "warning" };
-		if (plan.action === "send") {
-			store.send({ from: "user", to: id, kind: "control", control: "done", body: "done", deliver: "context" });
-			const busy = current.status === "working" ? " It finishes its current run first (interrupt it to cut that short)." : "";
-			return { text: `Told ${current.input.name} to wrap up and mark itself done.${busy}`, level: "info" };
-		}
-		if (store.isAlive(id)) return { text: `${current.input.name} came back to life; try again.`, level: "warning" };
-		await host.connection?.request("mark-done", { id });
-		return { text: `${current.input.name} had no process; marked done.`, level: "info" };
+		await host.connection?.flush();
+		await host.connection?.request("request-yield", { id: current.input.id });
+		return { text: `Asked ${current.input.name} to wrap up safely and yield to you. No work was interrupted.`, level: "info" };
 	}
 
 	async function act(ctx: ExtensionContext, record: AgentRecord): Promise<void> {
@@ -176,14 +167,18 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 			} else if (choice === "message") {
 				const body = await ctx.ui.input(`Message to ${record.input.name}`, "text");
 				if (body?.trim()) {
-					store.send({ from: "user", to: id, kind: "instruction", body, deliver: "context" });
 					await host.connection?.flush();
-					ctx.ui.notify(`Sent to ${id}`, "info");
+					const sent = await host.connection?.request("send", { message: { from: "user", to: id, kind: "instruction", body, deliver: "context" } });
+					ctx.ui.notify(`Sent to ${id}${sent?.deferred ? `; retained, delivery deferred (${sent.deferred})` : ""}`, "info");
 				}
-			} else if (choice === "done") {
-				const result = await markDone(record);
+			} else if (choice === "yield") {
+				const result = await requestYield(record);
 				await host.connection?.flush();
 				ctx.ui.notify(result.text, result.level);
+			} else if (choice === "archive" || choice === "restore" || choice === "restore-attach") {
+				await host.connection?.request(choice === "archive" ? "archive" : "restore", { id, actor: "user" });
+				if (choice === "restore-attach") await attachTo(ctx, store.record(id)!);
+				else ctx.ui.notify(`${choice === "archive" ? "Archived" : "Restored"} ${id}. Children were not changed.`, "info");
 			} else if (choice === "interrupt" || choice === "kill") {
 				await supervisor.signal(id, choice);
 				ctx.ui.notify(`${choice} sent to ${id}`, "info");
@@ -205,33 +200,26 @@ export function registerUi(host: AgentsHost, supervisor: Supervisor): void {
 		if (record) await act(ctx, record);
 	}
 
-	pi.registerCommand("agent-done", {
-		description: "Tell an agent to wrap up, report and mark itself done: /agent-done [id|name] (no argument: this agent)",
-		handler: async (args, ctx) => {
-			const self = host.identity;
-			if (!self) return void ctx.ui.notify("This session is not an agent.", "warning");
-			const query = args.trim();
-			let target: AgentRecord | undefined;
-			if (!query) {
-				target = self.parent ? store.record(self.id) : undefined;
-				if (!target) {
-					const open = store.descendants(self.id).filter((r) => planDone(r).action !== "noop" && planDone(r).action !== "refuse");
-					return void ctx.ui.notify(`Usage: /agent-done <id|name>${open.length ? `. Open: ${open.map((r) => r.input.name).join(", ")}` : ""}`, "info");
-				}
-			} else {
-				const resolved = resolveAgent(store.descendants(self.id), query);
+	for (const operation of ["yield", "archive", "restore"] as const) {
+		pi.registerCommand(`agent-${operation}`, {
+			description: operation === "yield" ? "Request safe wrap-up and a handoff to you: /agent-yield [id|name]"
+				: `Explicitly ${operation} an agent: /agent-${operation} <id|name>`,
+			handler: async (args, ctx) => {
+				const query = args.trim();
+				const resolved = query ? resolveAgent(store.list(), query)
+					: host.identity?.parent ? { record: store.record(host.identity.id)! } : { error: `Usage: /agent-${operation} <id|name>` };
 				if ("error" in resolved) return void ctx.ui.notify(resolved.error, "warning");
-				target = resolved.record;
-			}
-			try {
-				const result = await markDone(target);
-				await host.connection?.flush();
-				ctx.ui.notify(result.text, result.level);
-			} catch (error) {
-				ctx.ui.notify(String(error instanceof Error ? error.message : error), "error");
-			}
-		},
-	});
+				try {
+					if (operation === "yield") {
+						const result = await requestYield(resolved.record); ctx.ui.notify(result.text, result.level);
+					} else {
+						await host.connection?.request(operation, { id: resolved.record.input.id, actor: "user" });
+						ctx.ui.notify(`${operation === "archive" ? "Archived" : "Restored"} ${resolved.record.input.name}. Children were not changed.`, "info");
+					}
+				} catch (error) { ctx.ui.notify(String(error instanceof Error ? error.message : error), "error"); }
+			},
+		});
+	}
 	pi.registerCommand("agents", {
 		description: "Search every agent, attach, message, resume or kill",
 		handler: async (_args, ctx) => open(ctx),

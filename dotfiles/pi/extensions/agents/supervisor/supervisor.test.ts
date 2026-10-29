@@ -74,8 +74,8 @@ describe("profiles", () => {
 
 describe("agentToolNames", () => {
 	it("gates by capability", () => {
-		assert.deepEqual(agentToolNames(false, false), ["send_message", "ask_parent", "report_done", "set_status"]);
-		assert.ok(agentToolNames(true, false).includes("ask_user"));
+		assert.deepEqual(agentToolNames(false, false), ["send_message", "ask_parent", "yield", "set_status"]);
+		assert.ok(agentToolNames(true, false).includes("yield"));
 		assert.ok(!agentToolNames(true, false).includes("spawn_agent"));
 		assert.ok(agentToolNames(true, true).includes("spawn_agent"));
 	});

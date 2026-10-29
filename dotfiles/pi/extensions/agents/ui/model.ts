@@ -2,7 +2,7 @@
  * Pure view-model for the agents UI: tree ordering, glyphs, activity text,
  * fuzzy filtering. No pi imports so it is unit-testable.
  */
-import { type AgentMessageDetails, type AgentRecord, type EffectiveStatus, isTerminal, planDone, RESULT_ENTRY, type ResultClaim, SPAWN_ENTRY, type SpawnClaim, type StallReport } from "../store/index.ts";
+import { type AgentMessageDetails, type AgentRecord, type EffectiveStatus, isTerminal, planYield, RESULT_ENTRY, type ResultClaim, SPAWN_ENTRY, type SpawnClaim, type StallReport } from "../store/index.ts";
 
 export type Tone = "text" | "success" | "warning" | "error" | "muted";
 
@@ -20,37 +20,20 @@ export interface Row {
 	detail?: string;
 	/** Dim trailing text (triage: the parent's name), shown only when the width allows. */
 	suffix?: string;
+	/** Always-visible ownership prefix when fuzzy search flattens the groups. */
+	parentContext?: string;
+	nameQualified?: boolean;
 	/** Non-selectable group title (triage view); hidden while filtering. */
 	header?: boolean;
 }
 
 /** Short human labels; the raw status ids are too long to scan. */
 const STATUS_LABELS: Record<EffectiveStatus, string> = {
-	starting: "starting",
-	idle: "idle",
-	working: "working",
-	dormant: "dormant",
-	"waiting-on-parent": "needs parent",
-	"waiting-on-user": "needs you",
-	done: "done",
-	stopped: "stopped",
-	error: "error",
-	"timed-out": "timed out",
-	lost: "lost",
+	working: "working", idle: "idle", "waiting-on-parent": "needs parent",
+	"needs-you": "needs you", blocked: "blocked", archived: "archived",
 };
-
 const GLYPHS: Record<EffectiveStatus, string> = {
-	starting: "…",
-	idle: "○",
-	working: "●",
-	dormant: "◌",
-	"waiting-on-parent": "?",
-	"waiting-on-user": "?",
-	done: "✓",
-	stopped: "■",
-	error: "✗",
-	"timed-out": "⏱",
-	lost: "∅",
+	working: "●", idle: "○", "waiting-on-parent": "?", "needs-you": "?", blocked: "!", archived: "□",
 };
 
 export function formatDuration(ms: number): string {
@@ -81,16 +64,14 @@ export function activityText(record: AgentRecord, now: number): string {
 		}
 		case "idle":
 		case "waiting-on-parent":
-		case "waiting-on-user": {
+		case "needs-you": {
 			const duration = formatDuration(now - state.since);
 			return state.note ? `${duration} · ${state.note}` : duration;
 		}
-		case "lost":
-			return `gone ${formatDuration(now - state.activity.lastSeenAt)}`;
-		case "done":
-		case "error":
-		case "timed-out":
-			return state.summary ? cleanSummary(state.summary) : "";
+		case "blocked":
+			return cleanSummary(state.reason ?? state.summary ?? "Cannot safely continue");
+		case "archived":
+			return state.summary ? cleanSummary(state.summary) : "Retired by user or parent";
 		default:
 			return "";
 	}
@@ -103,17 +84,37 @@ interface BuildOptions {
 	breadcrumb: (id: string) => string;
 	/** Restrict to this agent and its descendants. */
 	subtreeOf?: string;
-	/** Hide whole trees in which every agent has finished (done/stopped/timed out/error). */
+	/** Hide archived rows while retaining any active descendants. */
 	hideFinished?: boolean;
 	/** Hide finished agents that finished longer ago than this (for the compact widget). */
 	finishedMaxAgeMs?: number;
 }
 
-/**
- * Finished = terminal (or a dormant root) AND no live process: a `done` interactable agent that is
- * still attachable is not finished. A dormant root only keeps its tree visible through unfinished children.
- */
-const isFinished = (r: AgentRecord) => (isTerminal(r.status) || r.status === "dormant") && !r.alive;
+/** Retirement is explicit archive, never inferred from completion, age or process absence. */
+const isFinished = (r: AgentRecord) => r.status === "archived";
+
+/** Rust-style display names derived from immutable lineage; IDs remain operation identities. */
+export function qualifiedNames(records: AgentRecord[]): Map<string, string> {
+	const byId = new Map(records.map(record => [record.input.id, record]));
+	const names = new Map<string, string>();
+	const resolve = (id: string, seen = new Set<string>()): string => {
+		if (names.has(id)) return names.get(id)!;
+		const input = byId.get(id)?.input;
+		if (!input) return id;
+		if (seen.has(id)) return input.name;
+		seen.add(id);
+		const name = input.parent ? `${resolve(input.parent, seen)}::${input.name}` : input.name;
+		names.set(id, name); return name;
+	};
+	for (const record of records) resolve(record.input.id);
+	const duplicates = new Map<string, string[]>();
+	for (const [id, name] of names) duplicates.set(name, [...(duplicates.get(name) ?? []), id]);
+	for (const [name, ids] of duplicates) if (ids.length > 1) for (const id of ids) {
+		const tail = id.slice(-4);
+		names.set(id, `${name} · ${ids.some(other => other !== id && other.slice(-4) === tail) ? id : tail}`);
+	}
+	return names;
+}
 
 /** Depth-first rows: roots by creation time, children under their parent. */
 export function buildRows(records: AgentRecord[], options: BuildOptions): Row[] {
@@ -126,25 +127,19 @@ export function buildRows(records: AgentRecord[], options: BuildOptions): Row[] 
 	}
 	for (const list of byParent.values()) list.sort((a, b) => a.input.createdAt - b.input.createdAt);
 
-	const treeFinished = (record: AgentRecord, seen = new Set<string>()): boolean => {
-		if (seen.has(record.input.id)) return true;
-		seen.add(record.input.id);
-		return isFinished(record) && (byParent.get(record.input.id) ?? []).every((child) => treeFinished(child, seen));
-	};
-
 	const picked: Array<{ record: AgentRecord; depth: number }> = [];
 	const seen = new Set<string>();
 	const walk = (record: AgentRecord, depth: number) => {
 		if (seen.has(record.input.id)) return;
 		seen.add(record.input.id);
-		if (depth === 0 && options.hideFinished && treeFinished(record)) return;
+		const hidden = options.hideFinished && record.status === "archived";
 		const stale =
 			options.finishedMaxAgeMs !== undefined &&
 			isFinished(record) &&
 			record.state !== undefined &&
 			options.now - record.state.since > options.finishedMaxAgeMs;
-		if (!stale) picked.push({ record, depth });
-		for (const child of byParent.get(record.input.id) ?? []) walk(child, depth + 1);
+		if (!hidden && !stale) picked.push({ record, depth });
+		for (const child of byParent.get(record.input.id) ?? []) walk(child, depth + (hidden ? 0 : 1));
 	};
 
 	if (options.subtreeOf) {
@@ -154,100 +149,98 @@ export function buildRows(records: AgentRecord[], options: BuildOptions): Row[] 
 		for (const root of byParent.get(null) ?? []) walk(root, 0);
 	}
 
-	// Several agents may share a name (every root is named after its cwd): add the id tail.
-	const counts = new Map<string, number>();
-	for (const { record } of picked) counts.set(record.input.name, (counts.get(record.input.name) ?? 0) + 1);
-	return picked.map(({ record, depth }) => toRow(record, options, { depth, duplicate: (counts.get(record.input.name) ?? 0) > 1 }));
+	const names = qualifiedNames(records);
+	return picked.map(({ record, depth }) => toRow(record, options, { depth, name: names.get(record.input.id)!,
+		parentContext: record.input.parent ? names.get(record.input.parent) : undefined }));
 }
 
-function toRow(record: AgentRecord, options: Pick<BuildOptions, "now" | "stalls" | "breadcrumb">, extra: { depth: number; duplicate: boolean; last?: string; suffix?: string }): Row {
+function toRow(record: AgentRecord, options: Pick<BuildOptions, "now" | "stalls" | "breadcrumb">, extra: { depth: number; name: string; last?: string; suffix?: string; parentContext?: string }): Row {
 	const { input, status } = record;
-	const { depth, duplicate } = extra;
+	const { depth, name } = extra;
 	const stalled = options.stalls?.has(input.id) ?? false;
-	const waiting = status === "waiting-on-parent" || status === "waiting-on-user";
+	const waiting = status === "waiting-on-parent" || status === "needs-you";
 	const glyph = stalled ? "!" : GLYPHS[status];
-	const name = duplicate ? `${input.name}·${input.id.slice(-4)}` : input.name;
-	const tone: Tone = stalled || status === "error" ? "error" : waiting ? "warning" : status === "working" ? "success" : isTerminal(status) || status === "lost" || status === "dormant" ? "muted" : "text";
+	const tone: Tone = stalled || status === "blocked" ? "error" : waiting ? "warning" : status === "working" ? "success" : status === "archived" ? "muted" : "text";
 	const breadcrumb = options.breadcrumb(input.id);
 	return {
 		id: input.id,
 		name,
 		tone,
 		breadcrumb,
-		detail: breadcrumb === name ? undefined : breadcrumb,
+		detail: `${name} · ${input.id} · ${input.role} · ${STATUS_LABELS[status]}${extra.last ? ` · ${extra.last}` : ""}`,
 		suffix: extra.suffix,
-		searchText: `${input.id} ${input.name} ${input.role} ${STATUS_LABELS[status]} ${input.objective} ${breadcrumb}`.toLowerCase(),
+		parentContext: extra.parentContext,
+		nameQualified: true,
+		searchText: `${input.id} ${input.parent ?? ""} ${name} ${input.role} ${STATUS_LABELS[status]} ${input.objective} ${breadcrumb}`.toLowerCase(),
 		cells: [`${"  ".repeat(depth)}${glyph} ${name}`, input.role, STATUS_LABELS[status] + (record.residency === "parked" ? " · parked" : ""), extra.last ?? activityText(record, options.now)],
 	};
 }
 
-/** Triage covers this long: older errors and lost agents decay into COMPLETED, and COMPLETED shows only this much unless asked. */
-export const TRIAGE_WINDOW_MS = 24 * 3_600_000;
-
+export const TRIAGE_GROUPS = ["needs", "blocked", "working", "waiting", "idle", "archived"] as const;
+type TriageGroup = (typeof TRIAGE_GROUPS)[number];
 interface TriageOptions extends Pick<BuildOptions, "now" | "stalls" | "breadcrumb" | "subtreeOf"> {
-	/** Hide COMPLETED agents with no running process that finished longer ago than this; undefined shows all. */
-	completedMaxAgeMs?: number;
+	showArchived?: boolean;
+	/** Compact widget only: old idle rows may be omitted, never needs-you/blocked/waiting. */
+	idleMaxAgeMs?: number;
 }
-
-type TriageGroup = "needs" | "working" | "completed";
-
-/** When the agent entered its current state; a lost agent's clock is its last heartbeat. */
-const stateSince = (record: AgentRecord): number => (!record.state ? 0 : record.status === "lost" ? record.state.activity.lastSeenAt : record.state.since);
+const stateSince = (record: AgentRecord): number => record.state?.since ?? 0;
 
 /** A user's own session: never a triage row, and a human answers its children. */
 const isRoot = (record: AgentRecord): boolean => record.input.parent === null || record.input.role === "main";
 
 const withTail = (head: string, summary: string | undefined): string => (summary ? `${head} · ${cleanSummary(summary)}` : head);
 
-/**
- * Flat triage view: NEEDS YOU (waiting on the human, stalled, recent errors), WORKING, COMPLETED.
- * Roots (the user's own sessions) are never rows. `items` is the three groups in order, each
- * preceded by a header row, empty groups skipped.
- */
+/** Urgency buckets with explicit parent groups. Human roots are headings/context, not agent rows. */
 export function triage(records: AgentRecord[], options: TriageOptions): Record<TriageGroup, Row[]> & { items: Row[] } {
 	const { now, stalls } = options;
 	const byId = new Map(records.map((r) => [r.input.id, r]));
 	const scope = options.subtreeOf ? subtreeIds(records, options.subtreeOf) : undefined;
-	const fresh = (at: number) => now - at < TRIAGE_WINDOW_MS;
-
 	const classify = (record: AgentRecord): { group: TriageGroup; sort: number; last: string } => {
 		const { state, status } = record;
 		const since = stateSince(record);
-		const ago = () => withTail(`${STATUS_LABELS[status]} ${formatDuration(now - since)} ago`, state?.summary);
-		if (!state) return { group: "completed", sort: since, last: ago() }; // unreadable state: only under show-all
-		const stall = stalls?.get(record.input.id);
-		const parent = record.input.parent ? byId.get(record.input.parent) : undefined;
-		// The human answers a child whose parent is a root, gone or not running.
-		const humanAnswers = status === "waiting-on-parent" && (!parent || isRoot(parent) || !parent.alive);
-		if (status === "waiting-on-user" || humanAnswers) return { group: "needs", sort: since, last: `waiting ${activityText(record, now)}` };
-		if (stall && (stall.kind !== "lost" || fresh(since))) {
-			const { lastEventAt } = state.activity;
-			return { group: "needs", sort: lastEventAt, last: stall.kind === "lost" ? `gone ${formatDuration(now - since)}` : `stalled ${formatDuration(now - lastEventAt)}` };
-		}
-		if (status === "working" || status === "starting") return { group: "working", sort: state.runStartedAt ?? since, last: activityText(record, now) };
-		return { group: status === "error" && fresh(since) ? "needs" : "completed", sort: since, last: ago() };
+		if (status === "needs-you") return { group: "needs", sort: since, last: withTail(`waiting ${activityText(record, now)}`, state?.summary) };
+		if (status === "blocked" || stalls?.has(record.input.id)) return { group: "blocked", sort: since, last: activityText(record, now) };
+		if (status === "working") return { group: "working", sort: state?.runStartedAt ?? since, last: activityText(record, now) };
+		if (status === "waiting-on-parent") return { group: "waiting", sort: since, last: activityText(record, now) };
+		return { group: status === "archived" ? "archived" : "idle", sort: -since,
+			last: withTail(`${STATUS_LABELS[status]} ${formatDuration(now - since)} ago`, state?.summary) };
 	};
 
-	const picked: Record<TriageGroup, Array<{ record: AgentRecord; sort: number; last: string }>> = { needs: [], working: [], completed: [] };
+	const picked: Record<TriageGroup, Array<{ record: AgentRecord; sort: number; last: string }>> = { needs: [], blocked: [], working: [], waiting: [], idle: [], archived: [] };
 	for (const record of records) {
 		if (isRoot(record) || (scope && !scope.has(record.input.id))) continue;
 		const { group, sort, last } = classify(record);
-		if (group === "completed" && !record.alive && options.completedMaxAgeMs !== undefined && now - stateSince(record) >= options.completedMaxAgeMs) continue;
+		if (group === "archived" && !options.showArchived) continue;
+		if (group === "idle" && !record.alive && options.idleMaxAgeMs !== undefined && now - stateSince(record) >= options.idleMaxAgeMs) continue;
 		picked[group].push({ record, sort, last });
 	}
-	picked.needs.sort((a, b) => a.sort - b.sort);
-	picked.working.sort((a, b) => a.sort - b.sort);
-	picked.completed.sort((a, b) => b.sort - a.sort);
+	for (const group of TRIAGE_GROUPS) picked[group].sort((a, b) => a.sort - b.sort);
 
-	const counts = new Map<string, number>();
-	for (const { record } of Object.values(picked).flat()) counts.set(record.input.name, (counts.get(record.input.name) ?? 0) + 1);
+	const names = qualifiedNames(records);
+	const parentLabel = (id: string) => names.get(id) ?? (id || "No parent");
 	const rows = (group: TriageGroup): Row[] =>
-		picked[group].map(({ record, last }) => toRow(record, group === "needs" ? options : { ...options, stalls: undefined }, { depth: 0, duplicate: (counts.get(record.input.name) ?? 0) > 1, last, suffix: byId.get(record.input.parent ?? "")?.input.name }));
-	const out = { needs: rows("needs"), working: rows("working"), completed: rows("completed") };
-	const titles: Record<TriageGroup, string> = { needs: "NEEDS YOU", working: "WORKING", completed: "COMPLETED" };
-	const items = (["needs", "working", "completed"] as const).flatMap((group) =>
-		out[group].length === 0 ? [] : [{ id: `header:${group}`, name: titles[group], tone: "muted" as const, breadcrumb: "", searchText: "", cells: [`${titles[group]} (${out[group].length})`], header: true }, ...out[group]],
-	);
+		picked[group].map(({ record, last }) => toRow(record, group === "blocked" ? options : { ...options, stalls: undefined }, {
+			depth: 0, name: names.get(record.input.id)!, last,
+			suffix: parentLabel(record.input.parent ?? ""), parentContext: parentLabel(record.input.parent ?? ""),
+		}));
+	const out = Object.fromEntries(TRIAGE_GROUPS.map(group => [group, rows(group)])) as Record<TriageGroup, Row[]>;
+	const titles: Record<TriageGroup, string> = { needs: "NEEDS YOU", blocked: "BLOCKED", working: "WORKING", waiting: "WAITING ON PARENT", idle: "IDLE", archived: "ARCHIVED" };
+	const header = (id: string, title: string): Row => ({ id, name: title, tone: "muted", breadcrumb: "", searchText: "", cells: [title], header: true });
+	const items = TRIAGE_GROUPS.flatMap(group => {
+		if (!out[group].length) return [];
+		// Input is urgency/age sorted, so first occurrence ranks each parent by its most
+		// urgent child. Grouping keeps each parent's children in that same predictable order.
+		const groups = new Map<string, Row[]>();
+		for (const row of out[group]) {
+			const parent = byId.get(row.id)?.input.parent ?? "";
+			if (!groups.has(parent)) groups.set(parent, []);
+			groups.get(parent)!.push(row);
+		}
+		return [header(`header:${group}`, `${titles[group]} (${out[group].length})`),
+			...[...groups].flatMap(([parent, children]) => [
+				header(`header:${group}:parent:${parent}`, `Parent: ${parentLabel(parent)} (${children.length})`), ...children,
+			])];
+	});
 	return { ...out, items };
 }
 
@@ -273,14 +266,17 @@ export type Action = [id: string, label: string, hint: string];
 export function actionsFor(record: AgentRecord, selfId: string | undefined): Action[] {
 	const isSelf = record.input.id === selfId;
 	const isRoot = record.input.role === "main";
-	const resumable = !record.alive && !isRoot && (isTerminal(record.status) || record.status === "lost" || record.residency === "parked");
+	const resumable = !record.alive && !isRoot && record.status !== "archived" && (record.status === "blocked" || record.residency === "parked");
 	const actions: Action[] = [];
-	if (record.input.interactable && !isSelf && (record.alive || resumable)) {
+	if (record.input.interactable && !isRoot && !isSelf && record.status !== "archived" && (record.alive || resumable)) {
 		actions.push(["attach", "Attach", record.alive ? "open its session in a new zellij tab" : "resume it, then attach"]);
 	}
 	if (!isSelf) actions.push(["message", "Message", "send it an instruction"]);
-	if (!isSelf && ["send", "mark"].includes(planDone(record).action)) {
-		actions.push(["done", "Mark done", record.alive ? "ask it to wrap up, report and mark itself done" : "no process: mark it done as is"]);
+	if (!isSelf && planYield(record).action === "send") actions.push(["yield", "Request yield to you", "ask it to wrap up safely and hand work to the human"]);
+	if (!isSelf && record.status !== "archived") actions.push(["archive", "Archive", "retire this agent after detached idle parking; children stay active"]);
+	if (!isSelf && record.status === "archived") {
+		actions.push(["restore", "Restore", "make available; deliver queued messages"]);
+		if (record.input.interactable && !isRoot) actions.push(["restore-attach", "Restore and attach", "explicitly restore, then open native Pi"]);
 	}
 	if (record.alive && !isSelf) {
 		actions.push(["interrupt", "Interrupt", "abort its current run; it stays alive"], ["kill", "Kill", "terminate its process group"]);
@@ -292,7 +288,7 @@ export function actionsFor(record: AgentRecord, selfId: string | undefined): Act
 }
 
 /** Pad cells into aligned columns. Cells are plain text; `max` caps each column (last column is never padded). */
-export function alignCells(rows: string[][], max: number[] = [34, 10, 12]): string[] {
+export function alignCells(rows: string[][], max: number[] = [Infinity, 10, 12]): string[] {
 	const cols = Math.max(0, ...rows.map((r) => r.length));
 	const widths = Array.from({ length: cols }, (_, c) => Math.min(max[c] ?? Infinity, Math.max(0, ...rows.map((r) => [...(r[c] ?? "")].length))));
 	return rows.map((r) =>
@@ -324,14 +320,15 @@ export function fuzzyScore(query: string, text: string): number | undefined {
 	return score;
 }
 
+const searchWords = (text: string): string[] => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
 /** Each term must fuzzy-match within a single word, so long text does not match everything. */
 export function filterRows<T extends { searchText: string }>(rows: T[], query: string): T[] {
-	const q = query.trim();
-	if (!q) return rows;
-	const terms = q.toLowerCase().split(/\s+/);
+	const terms = searchWords(query);
+	if (!terms.length) return rows;
 	return rows
 		.map((row) => {
-			const words = row.searchText.split(/[^a-z0-9]+/).filter(Boolean);
+			const words = searchWords(row.searchText);
 			let total = 0;
 			for (const term of terms) {
 				let best: number | undefined;
@@ -347,6 +344,13 @@ export function filterRows<T extends { searchText: string }>(rows: T[], query: s
 		.filter((entry): entry is { row: T; total: number } => entry !== undefined)
 		.sort((a, b) => a.total - b.total)
 		.map((entry) => entry.row);
+}
+
+/** Search flattens headings but keeps ownership in the first visible column, not an optional suffix. */
+export function filterListItems<T extends { searchText: string; cells: string[]; header?: boolean; parentContext?: string; nameQualified?: boolean }>(items: T[], query: string): T[] {
+	return filterRows(items.filter(item => !item.header), query).map(item => item.parentContext && !item.nameQualified
+		? { ...item, cells: [`${item.parentContext} › ${item.cells[0] ?? ""}`, ...item.cells.slice(1)] }
+		: item);
 }
 
 /** Widget lines for a tree: aligned, one row per agent. */

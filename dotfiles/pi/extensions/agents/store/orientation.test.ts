@@ -18,7 +18,7 @@ describe("orientation", () => {
 	it("says nothing when there is nothing to say", () => {
 		assert.equal(orientation(tmp.store, ME, now, new Map()), undefined);
 		tmp.store.create(mkInput("scout.old.0002", ME));
-		tmp.store.writeState("scout.old.0002", { status: "done", summary: "long ago" });
+		tmp.store.writeState("scout.old.0002", { status: "archived", summary: "long ago" });
 		tmp.store.writeState("scout.old.0002", { since: now - 3_600_000 }); // finished an hour ago
 		assert.equal(orientation(tmp.store, ME, now, claimsFor("scout.old.0002")), undefined);
 		assert.equal(orientation(tmp.store, "ghost.x.0000", now, new Map()), undefined);
@@ -40,16 +40,16 @@ describe("orientation", () => {
 		tmp.store.create(mkInput("worker.wedged.0003", ME));
 		live("worker.wedged.0003", { activity: { lastEventAt: 0, lastSeenAt: 0 } });
 		const lines = orientation(tmp.store, ME, now, claimsFor("worker.lost.0002"))!.split("\n").slice(2);
-		assert.deepEqual(lines, ["! worker.lost.0002 worker lost", "! worker.wedged.0003 worker wedged [other branch]"]);
+		assert.deepEqual(lines, ["! worker.lost.0002 worker blocked · Execution unavailable", "! worker.wedged.0003 worker wedged [other branch]"]);
 	});
 	it("lists recently finished children with a 60-char summary, and claims whose record is gone", () => {
 		tmp.store.create(mkInput("scout.fin.0002", ME));
-		tmp.store.writeState("scout.fin.0002", { status: "done", summary: `found\n${"x".repeat(100)}`, since: now - 60_000 });
+		tmp.store.writeState("scout.fin.0002", { status: "idle", summary: `found\n${"x".repeat(100)}`, handoff: { to: "parent", recipient: ME, messageId: "handoff-1", at: now - 60_000 }, since: now - 60_000 });
 		const claims = claimsFor("scout.fin.0002", "worker.gone.0003");
 		const lines = orientation(tmp.store, ME, now, claims)!.split("\n").slice(2);
-		assert.equal(lines[0], `- scout.fin.0002 scout done · found ${"x".repeat(60 - 6 - 1)}…`);
+		assert.equal(lines[0], `- scout.fin.0002 scout idle · found ${"x".repeat(60 - 6 - 1)}…`);
 		assert.equal(lines[1], "? worker.gone.0003 worker unknown (store lost)");
-		const finishedGone = claimsFromBranch([...claims.values()].flatMap((c) => [{ type: "custom", customType: SPAWN_ENTRY, data: c.spawn }, { type: "custom", customType: RESULT_ENTRY, data: resultClaim(c.spawn.id, "done", "ok", 2) }]));
+		const finishedGone = claimsFromBranch([...claims.values()].flatMap((c) => [{ type: "custom", customType: SPAWN_ENTRY, data: c.spawn }, { type: "custom", customType: RESULT_ENTRY, data: resultClaim(c.spawn.id, "idle", "ok", 2) }]));
 		assert.ok(!orientation(tmp.store, ME, now, finishedGone)!.includes("unknown"));
 	});
 	it("shows the agents of the session this one was forked from as read-only", () => {

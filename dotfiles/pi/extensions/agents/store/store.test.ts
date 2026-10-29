@@ -22,7 +22,7 @@ describe("ids", () => {
 describe("create and state", () => {
 	it("creates exclusively and seeds starting state", () => {
 		tmp.store.create(mkInput("main.a.0001", null));
-		assert.equal(tmp.store.readState("main.a.0001")?.status, "starting");
+		assert.equal(tmp.store.readState("main.a.0001")?.status, "idle");
 		assert.throws(() => tmp.store.create(mkInput("main.a.0001", null)));
 	});
 	it("merges state, nests activity, stamps since only on status change", async () => {
@@ -67,15 +67,15 @@ describe("liveness", () => {
 		assert.equal(tmp.store.isAlive("main.a.0001"), true);
 		assert.equal(tmp.store.record("main.a.0001")?.status, "working");
 		tmp.store.releaseLock("main.a.0001");
-		assert.equal(tmp.store.record("main.a.0001")?.status, "lost");
-		tmp.store.writeState("main.a.0001", { status: "done" });
-		assert.equal(tmp.store.record("main.a.0001")?.status, "done");
+		assert.equal(tmp.store.record("main.a.0001")?.status, "blocked");
+		tmp.store.writeState("main.a.0001", { status: "archived" });
+		assert.equal(tmp.store.record("main.a.0001")?.status, "archived");
 	});
 	it("a dormant root with no process stays dormant, never lost, and is never reported as stalled", () => {
 		tmp.store.create(mkInput("main.a.0001", null));
-		tmp.store.writeState("main.a.0001", { status: "dormant", activity: { lastEventAt: 0, lastSeenAt: 0 } });
+		tmp.store.writeState("main.a.0001", { status: "idle", activity: { lastEventAt: 0, lastSeenAt: 0 } });
 		const record = tmp.store.record("main.a.0001")!;
-		assert.equal(record.status, "dormant");
+		assert.equal(record.status, "idle");
 		assert.equal(stallOf(record, Date.now() + 3_600_000), undefined);
 	});
 	it("refuses a second live owner, takes over a dead one", () => {
@@ -95,12 +95,11 @@ describe("liveness", () => {
 });
 
 describe("starting grace and lock races", () => {
-	it("a freshly created agent is starting, not lost, until the grace expires", () => {
+	it("a created idle agent does not become blocked merely because time passes without a process", () => {
 		tmp.store.create(mkInput("worker.a.0001", null));
-		assert.equal(tmp.store.record("worker.a.0001")?.status, "starting");
-		assert.equal(tmp.store.record("worker.a.0001")?.status, "starting");
+		assert.equal(tmp.store.record("worker.a.0001")?.status, "idle");
 		fs.writeFileSync(path.join(tmp.home, "worker.a.0001", "state.json"), JSON.stringify({ ...tmp.store.readState("worker.a.0001"), since: Date.now() - 60_000 }));
-		assert.equal(tmp.store.record("worker.a.0001")?.status, "lost");
+		assert.equal(tmp.store.record("worker.a.0001")?.status, "idle");
 	});
 	it("acquireLock fails if its fresh file is replaced by another owner", () => {
 		tmp.store.create(mkInput("worker.a.0001", null));
@@ -155,7 +154,7 @@ describe("stallOf", () => {
 		start("main.a.0001");
 		tmp.store.writeState("main.a.0001", { status: "idle", activity: { lastEventAt: t0, lastSeenAt: t0 + 3_600_000 - 1 } });
 		assert.equal(stall("main.a.0001", t0 + 3_600_000), undefined);
-		tmp.store.writeState("main.a.0001", { status: "waiting-on-user", activity: { lastSeenAt: t0 + 3_600_000 } });
+		tmp.store.writeState("main.a.0001", { status: "needs-you", activity: { lastSeenAt: t0 + 3_600_000 } });
 		assert.equal(stall("main.a.0001", t0 + 3_600_000), undefined);
 	});
 	it("flags a stall after the step timeout without events", () => {

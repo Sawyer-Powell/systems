@@ -7,8 +7,8 @@
  * Rendering is plain strings; list logic is in `model.ts`.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Key, matchesKey, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { alignCells, filterRows, type Tone } from "./model.ts";
+import { type Component, Key, matchesKey, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { alignCells, filterListItems, type Tone } from "./model.ts";
 
 export interface ListItem {
 	id: string;
@@ -22,6 +22,8 @@ export interface ListItem {
 	suffix?: string;
 	/** A group title: not selectable, hidden while a query is typed. */
 	header?: boolean;
+	parentContext?: string;
+	nameQualified?: boolean;
 }
 
 export interface ListToggles {
@@ -58,7 +60,7 @@ export function createFuzzyList(options: FuzzyListOptions): Component {
 	// A typed query drops headers and ranks agent rows only.
 	const visible = () => {
 		const items = options.getItems(toggles);
-		return query ? filterRows(items.filter((item) => !item.header), query) : items;
+		return query ? filterListItems(items, query) : items;
 	};
 	/** Nearest selectable index to `target`, looking in `dir` first, then back (so both ends clamp). */
 	const settle = (items: ListItem[], target: number, dir: 1 | -1) => {
@@ -113,7 +115,7 @@ export function createFuzzyList(options: FuzzyListOptions): Component {
 			const tags = [
 				options.viewToggle ? toggles.view : undefined,
 				options.scopeToggle ? (toggles.scope === "all" ? "everything" : "my subtree") : undefined,
-				options.finishedToggle && toggles.showFinished ? "incl. finished" : undefined,
+				options.finishedToggle && toggles.showFinished ? "incl. archived" : undefined,
 			].filter(Boolean);
 			const lines = [
 				truncateToWidth(theme.fg("accent", [options.title, ...tags].join(" · ")), width),
@@ -143,13 +145,13 @@ export function createFuzzyList(options: FuzzyListOptions): Component {
 					lines.push(theme.fg("dim", `  ${choices.indexOf(items[index]!) + 1}/${choices.length}`));
 				}
 				const detail = items[index]?.detail;
-				if (detail) lines.push(truncateToWidth(theme.fg("dim", `  ${detail}`), width));
+				if (detail) lines.push(...wrapTextWithAnsi(theme.fg("dim", detail), Math.max(1, width - 2)).map(line => `  ${line}`));
 			}
 			const hints = [
 				"↑↓/ctrl+j,k move",
 				"enter select",
 				options.scopeToggle ? "tab scope" : undefined,
-				options.finishedToggle ? "ctrl+t finished" : undefined,
+				options.finishedToggle ? "ctrl+t archived" : undefined,
 				options.viewToggle ? `ctrl+v ${toggles.view === "triage" ? "tree" : "triage"} view` : undefined,
 				"esc close",
 			].filter(Boolean);

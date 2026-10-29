@@ -7,7 +7,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentsHost } from "../host.ts";
 import { selfId } from "../host.ts";
-import { type AgentRecord, deliveryForParent, ERROR_MAX_CHARS, type MessageKind, normalizeNote, SPAWN_ENTRY, spawnClaim, SUMMARY_MAX_CHARS } from "../store/index.ts";
+import { type AgentRecord, type MessageKind, normalizeNote, SPAWN_ENTRY, spawnClaim } from "../store/index.ts";
 import type { Supervisor } from "../supervisor/index.ts";
 
 type Result = { content: { type: "text"; text: string }[]; details: undefined };
@@ -25,6 +25,7 @@ export function describeRecord(record: AgentRecord, now = Date.now()): string {
 		bits.push(step ? `running ${step.summary} ${Math.round((now - step.startedAt) / 1000)}s (quiet ${quiet}s)` : `quiet ${quiet}s`);
 	}
 	if (state?.note) bits.push(state.note);
+	if (state?.reason) bits.push(state.reason.replace(/\s+/g, " ").slice(0, SUMMARY_WIDTH));
 	if (state?.summary) bits.push(state.summary.replace(/\s+/g, " ").slice(0, SUMMARY_WIDTH));
 	return bits.join(" · ");
 }
@@ -66,16 +67,17 @@ function registerMessaging(pi: ExtensionAPI, host: AgentsHost) {
 			if (!to) throw new Error("You have no parent.");
 			const toParent = to === host.identity?.parent;
 			const kind: MessageKind = params.kind ?? (toParent ? "info" : "instruction");
-			const message = store.send({
+			const partial = {
 				from: me,
 				to,
 				kind,
 				body: params.body,
 				inReplyTo: params.in_reply_to,
-				deliver: "context",
-			});
+				deliver: "context" as const,
+			};
 			await host.connection?.flush();
-			return text(`Sent ${kind} ${message.id} to ${to}.`);
+			const message = host.connection ? await host.connection.request("send", { message: partial }) : store.send(partial);
+			return text(`Sent ${kind} ${message.id} to ${to}.${message.deferred ? ` Delivery deferred (${message.deferred}); explicit restore/recovery/reconnect is required.` : ""}`);
 		},
 	});
 }
@@ -100,28 +102,32 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		},
 	});
 
-	if (host.identity?.interactable) {
-		pi.registerTool({
-			name: "ask_user",
-			label: "Ask User",
-			description:
-				"Flag the human that you cannot proceed without their decision. Non-blocking: after calling this, end your turn. Do NOT use this for progress or status updates; use set_status for that.",
-			parameters: Type.Object({ question: Type.String({ description: "What you need from the human." }) }),
-			async execute(_id, params) {
-				const me = selfId(host);
-				store.writeState(me, { status: "waiting-on-user", summary: params.question.slice(0, ERROR_MAX_CHARS) });
-				await host.connection?.flush();
-				return text("The user has been flagged. End your turn now.");
-			},
-		});
-	}
+	pi.registerTool({
+		name: "yield", label: "Yield",
+		description: "Hand work back, then stop autonomous work at the tool-batch boundary. Call this ALONE as your final tool. " +
+			"to parent means work completed: a special durable handoff wakes your parent's MODEL, including a human root. " +
+			"to user flags human attention for review, a decision or conversation, without waking your parent's model. " +
+			"Non-interactable profiles yield to parent unless a human explicitly requested a handoff. This never archives you.",
+		parameters: Type.Object({ to: Type.Union([Type.Literal("parent"), Type.Literal("user")]), message: Type.String() }),
+		executionMode: "sequential",
+		async execute(toolCallId, params, signal) {
+			if (host.soleYieldCallId !== toolCallId) throw new Error("Finish other tools, then call yield by itself");
+			if (!host.connection) throw new Error("Durable yield requires the central runtime");
+			if (host.pendingYield) throw new Error("A yield is already requested; call it alone as your final tool");
+			if (params.to === "user" && !host.identity?.interactable && !store.readState(selfId(host))?.yieldRequested) throw new Error("This profile yields to parent unless the human requested a handoff");
+			await host.connection.flush();
+			if (signal?.aborted) throw new Error("Yield interrupted before handoff acceptance");
+			host.pendingYield = { ...params, messageId: `yield:${selfId(host)}:${toolCallId}` };
+			return { ...text(`Yield to ${params.to} requested. The runtime commits the durable handoff after this tool batch finishes.`), terminate: true };
+		},
+	});
 
 	pi.registerTool({
 		name: "set_status",
 		label: "Set Status",
 		description:
 			"Set a one-line status (max 60 chars) shown in the user's agent list. Use for progress updates (e.g. 'running tests', 'waiting on CI'). " +
-			"Never put data values, patient or customer information in it. Use ask_user only when you cannot proceed without a human decision, never for status.",
+			"Never put data values, patient or customer information in it. Use yield(to: user) when the human should review, decide or converse, never for progress.",
 		parameters: Type.Object({ note: Type.String({ description: "One short line." }) }),
 		async execute(_id, params) {
 			// Only the note changes: never the status, never a message.
@@ -131,22 +137,6 @@ function registerReporting(pi: ExtensionAPI, host: AgentsHost) {
 		},
 	});
 
-	pi.registerTool({
-		name: "report_done",
-		label: "Report Done",
-		description: "Report that your objective is complete, with a short factual summary of what you changed and ran.",
-		parameters: Type.Object({ summary: Type.String({ description: "What you did and what you ran." }) }),
-		async execute(_id, params) {
-			const me = selfId(host);
-			const parent = host.identity?.parent;
-			store.writeState(me, { status: "done", summary: params.summary.slice(0, SUMMARY_MAX_CHARS), waitingOn: undefined, note: undefined });
-			if (parent) {
-				store.send({ from: me, to: parent, kind: "result", body: params.summary, deliver: deliveryForParent(store, parent) });
-			}
-			await host.connection?.flush();
-			return text("Reported. You may stop.");
-		},
-	});
 }
 
 function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervisor) {
@@ -237,14 +227,32 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		},
 	});
 
+	for (const operation of ["archive", "restore"] as const) {
+		pi.registerTool({
+			name: `${operation}_agent`, label: operation === "archive" ? "Archive Agent" : "Restore Agent",
+			description: operation === "archive"
+				? "Explicitly retire your direct child, retaining its conversation. Requires detached settled parking; never interrupts work, affects attachments or cascades to children. Archived messages are deferred."
+				: "Explicitly restore your archived direct child and make queued work eligible for delivery. Never restores from an ordinary message.",
+			parameters: Type.Object({ id: Type.String() }),
+			async execute(_id, params) {
+				const actor = selfId(host);
+				if (store.readInput(params.id)?.parent !== actor) throw new Error("Only the direct owning parent may archive/restore this agent");
+				if (!host.connection) throw new Error("Archive/restore requires the central runtime");
+				await host.connection.flush();
+				await host.connection.request(operation, { id: params.id, actor });
+				return text(`${operation === "archive" ? "Archived" : "Restored"} ${params.id}.`);
+			},
+		});
+	}
+
 	pi.registerTool({
 		name: "list_agents",
 		label: "List Agents",
-		description: "List your descendants (one line each: id, role, status, activity), plus the available profiles.",
-		parameters: Type.Object({}),
-		async execute() {
+		description: "List your descendants (id, role, state, activity) and profiles. Archived agents are hidden unless include_archived is true.",
+		parameters: Type.Object({ include_archived: Type.Optional(Type.Boolean()) }),
+		async execute(_id, params) {
 			const me = selfId(host);
-			const lines = store.descendants(me).map((record) => describeRecord(record));
+			const lines = store.descendants(me).filter(record => params.include_archived || record.status !== "archived").map(record => describeRecord(record));
 			const profiles = supervisor
 				.profiles()
 				.map((p) => `${p.name}${p.interactable ? " (interactable)" : ""}: ${p.description}`);

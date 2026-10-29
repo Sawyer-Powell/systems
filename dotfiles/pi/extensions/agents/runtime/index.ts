@@ -18,7 +18,6 @@ import {
 	orientation,
 	RESULT_ENTRY,
 	resultClaim,
-	settleDone,
 	SUMMARY_MAX_CHARS,
 	wrapUpText,
 } from "../store/index.ts";
@@ -45,16 +44,16 @@ function textOf(message: AssistantLike | undefined): string {
 }
 
 /** Tools that flag a wait; any other tool starting means the agent has resumed work. */
-const ASK_TOOLS: readonly string[] = ["ask_user", "ask_parent"];
+const ASK_TOOLS: readonly string[] = ["yield", "ask_parent"];
 
 /** True when a tool starting proves an agent shown as waiting is in fact working again. */
 export function resumedFromWaiting(toolName: string, status: AgentStatus | undefined): boolean {
-	return (status === "waiting-on-user" || status === "waiting-on-parent") && !ASK_TOOLS.includes(toolName);
+	return status === "waiting-on-parent" && !ASK_TOOLS.includes(toolName);
 }
 
 /** State patch applied at agent_start: a new run clears the previous summary and status note. */
-export function agentStartPatch(): { summary: undefined; note: undefined } {
-	return { summary: undefined, note: undefined };
+export function agentStartPatch(now = Date.now()) {
+	return { summary: undefined, note: undefined, reason: undefined, handoff: undefined, waitingOn: undefined, runStartedAt: now };
 }
 
 const log = (message: string) => process.stderr.write(`[agents] ${message}\n`);
@@ -78,8 +77,7 @@ export function registerRuntime(host: AgentsHost): void {
 	const flush = async () => { await connection?.flush(); };
 	const receipt = async () => { if (id) { await flush(); await connection?.request("receipt", { id }); } };
 	let lastRun: AssistantLike | undefined;
-	/** A `/agent-done` request is outstanding: the next settled run ends it (see `settleDone`). */
-	let pendingDone = false;
+	let pendingYieldRequest = false;
 
 	const setStatus = (status: AgentStatus, extra: Record<string, unknown> = {}) => {
 		if (id) store.writeState(id, { status, ...extra });
@@ -90,7 +88,7 @@ export function registerRuntime(host: AgentsHost): void {
 		const input = host.identity;
 		if (!input?.parent || !id) return;
 		try {
-			store.send({ from: id, to: input.parent, kind: "result", body, deliver: deliveryForParent(store, input.parent) });
+			store.send({ from: id, to: input.parent, kind: "info", body, deliver: deliveryForParent(store, input.parent) });
 		} catch (error) {
 			log(`could not notify parent: ${String(error)}`);
 		}
@@ -102,9 +100,9 @@ export function registerRuntime(host: AgentsHost): void {
 			// A control message sent while this agent was dead must not fire on resume.
 			pi.appendEntry("agents.receipt", { id: message.id });
 			if (message.control === "interrupt") ctx.abort();
-			else if (message.control === "done") requestDone(message);
+			else if (message.control === "request-yield") requestYield(message);
 			else if (message.control === "stop") {
-				setStatus("stopped");
+				setStatus("blocked", { reason: store.readState(id)?.reason ?? "Stopped by request; inspect work before continuing" });
 				ctx.shutdown();
 			}
 			return;
@@ -114,7 +112,7 @@ export function registerRuntime(host: AgentsHost): void {
 			store.writeState(id, { waitingOn: undefined });
 		}
 		// A child's result is a claim of this branch, whether or not it enters the model's context.
-		if (message.kind === "result" && store.readInput(message.from)?.parent === id) {
+		if (message.kind === "yield" && store.readInput(message.from)?.parent === id) {
 			const status = store.readState(message.from)?.status ?? "unknown";
 			pi.appendEntry(RESULT_ENTRY, resultClaim(message.from, status, message.body, Date.now()));
 		}
@@ -133,37 +131,20 @@ export function registerRuntime(host: AgentsHost): void {
 		);
 	}
 
-	/**
-	 * `/agent-done`: ask this agent to wrap up. The agent runs a normal turn (steered into a run in
-	 * progress, never aborting it) and calls `report_done` itself; `agent_settled` finishes the job
-	 * if it did not. Roots, and agents that are not live work, ignore it.
-	 */
-	function requestDone(message: AgentMessage): void {
+	function requestYield(message: AgentMessage): void {
 		if (!ctx || !host.identity?.parent) return;
-		const status = currentStatus();
-		if (status === "done" || status === "stopped" || status === "timed-out") return;
-		pendingDone = true;
+		pendingYieldRequest = true;
 		const details: AgentMessageDetails = { from: message.from, kind: "control", id: message.id };
 		pi.sendMessage(
-			{ customType: AGENT_MESSAGE, content: agentMessageText({ from: message.from, kind: "control", id: message.id, body: wrapUpText() }), display: true, details },
+			{ customType: AGENT_MESSAGE, content: agentMessageText({ ...message, body: wrapUpText() }), display: true, details },
 			{ triggerTurn: true, deliverAs: ctx.isIdle() ? undefined : "steer" },
 		);
 	}
 
-	function finishNonInteractable(aborted: boolean): void {
-		if (!id) return;
-		let status: AgentStatus = "done";
-		let summary = textOf(lastRun).slice(0, SUMMARY_MAX_CHARS);
-		if (aborted) {
-			status = "stopped";
-		} else if (lastRun?.stopReason === "error") {
-			status = "error";
-			summary = (lastRun.errorMessage ?? "model call failed").slice(0, ERROR_MAX_CHARS);
-		}
-		setStatus(status, { summary: summary || undefined });
-		const prefix = status === "error" ? "FAILED: " : status === "stopped" ? "STOPPED: " : "";
-		notifyParent(`${prefix}${summary || "(no output)"}`);
-		// The daemon parks this settled runner; no child-owned exit timer or supervisor.
+	async function finishHandoff(to: "parent" | "user", message: string): Promise<void> {
+		if (!id || !connection) throw new Error("No managed handoff connection");
+		await flush();
+		await connection.request("yield", { id, to, message, messageId: `settled:${id}:${ctx?.sessionManager.getLeafId()}` });
 	}
 
 	pi.on(
@@ -172,6 +153,8 @@ export function registerRuntime(host: AgentsHost): void {
 			await connection?.start();
 			shuttingDown = false;
 			parking = false;
+			host.pendingYield = undefined;
+			host.soleYieldCallId = undefined;
 			ctx = context;
 			host.ctx = context;
 
@@ -271,14 +254,16 @@ export function registerRuntime(host: AgentsHost): void {
 			shuttingDown = true;
 			tracker?.reset();
 			orientationText = undefined;
-			pendingDone = false;
+			pendingYieldRequest = false;
+			host.pendingYield = undefined;
+			host.soleYieldCallId = undefined;
 			if (id) {
 				// Only /reload continues as this same agent. Any other shutdown unloads the session:
 				// a root is then dormant (resuming the session wakes it), a child is stopped.
 				if (event.reason !== "reload") {
 					const status = currentStatus();
-					if (host.identity?.parent === null) setStatus("dormant");
-					else if (!parking && status && !isTerminal(status)) setStatus("stopped");
+					if (host.identity?.parent === null) setStatus("idle");
+					else if (!parking && status && !isTerminal(status)) setStatus("blocked", { reason: "Runner stopped; inspect work before explicit recovery" });
 				}
 				await flush();
 			}
@@ -291,8 +276,23 @@ export function registerRuntime(host: AgentsHost): void {
 		}),
 	);
 
-	const touch = safe(() => tracker?.touch());
-	pi.on("turn_end", touch);
+	pi.on("turn_end", safe(async (event, context) => {
+		tracker?.touch(); await flush();
+		if (context.signal?.aborted) { host.pendingYield = undefined; return; }
+		const pending = host.pendingYield;
+		if (pending && id && connection) {
+			try {
+				await connection.request("yield", { id, ...pending });
+			} catch (error) {
+				host.pendingYield = undefined;
+				setStatus("blocked", { reason: `Handoff was not accepted: ${String(error)}` });
+				await flush(); return;
+			}
+			host.pendingYield = undefined;
+		}
+		// Yield is admitted only as the sole tool. Native terminate:true ends its follow-up;
+		// native queued instructions may continue normally, with no abort signal or custom stop.
+	}));
 	pi.on(
 		"message_start",
 		safe(() => tracker?.touch()), // assistant message_start is only the response headers, not output
@@ -318,16 +318,22 @@ export function registerRuntime(host: AgentsHost): void {
 		"agent_start",
 		safe(async () => {
 			await connection?.request("activity", { busy: true });
+			host.pendingYield = undefined;
+			host.soleYieldCallId = undefined;
 			lastRun = undefined;
 			const status = currentStatus();
-			// `done` can be left again: a live interactable agent may be given more work.
-			if (status && !["stopped", "timed-out"].includes(status)) setStatus("working", agentStartPatch());
+			if (status && status !== "archived") setStatus("working", agentStartPatch());
 			tracker?.touch();
 		}),
 	);
 	pi.on(
 		"turn_start",
-		safe(() => tracker?.modelStart(pi.getThinkingLevel())),
+		safe((_event, context) => {
+			if (context.signal?.aborted) return;
+			host.soleYieldCallId = undefined;
+			if (id && store.readState(id)?.handoff) setStatus("working", agentStartPatch());
+			tracker?.modelStart(pi.getThinkingLevel());
+		}),
 	);
 	pi.on(
 		"message_end",
@@ -338,6 +344,9 @@ export function registerRuntime(host: AgentsHost): void {
 			if (event.message?.role === "assistant") {
 				tracker?.modelEnd();
 				lastRun = event.message;
+				const calls = (Array.isArray(event.message.content) ? event.message.content : [])
+					.filter((part): part is { type: "toolCall"; id: string; name: string } => part?.type === "toolCall");
+				host.soleYieldCallId = calls.length === 1 && calls[0]?.name === "yield" ? calls[0].id : undefined;
 			} else tracker?.touch();
 		}),
 	);
@@ -374,30 +383,25 @@ export function registerRuntime(host: AgentsHost): void {
 		safe(async (event: { aborted?: boolean }) => {
 			if (!id) return;
 			try {
-			tracker?.reset();
-			const status = currentStatus();
-			const outcome = settleDone({ pending: pendingDone, aborted: Boolean(event.aborted), status, failed: lastRun?.stopReason === "error" });
-			pendingDone = false;
-			if (host.identity && !host.identity.interactable) {
-				if (status && !isTerminal(status)) finishNonInteractable(Boolean(event.aborted));
-				return;
-			}
-			if (outcome === "finish") {
-				// Wrap-up turn ended without report_done: finish on the agent's behalf, with its own last words.
-				const summary = textOf(lastRun).slice(0, SUMMARY_MAX_CHARS);
-				setStatus("done", { summary: summary || undefined, waitingOn: undefined, note: undefined });
-				notifyParent(summary || "(no output)");
-				return;
-			}
-			if ((outcome === "cancelled" || outcome === "asked") && ctx?.hasUI) {
-				ctx.ui.notify(outcome === "cancelled" ? "Done request cancelled: the run was interrupted." : "Done request dropped: the agent asked a question instead. Answer it, then /agent-done again.", "warning");
-			}
-			if (lastRun?.stopReason === "error" && status && !isTerminal(status)) {
-				setStatus("error", { summary: (lastRun.errorMessage ?? "model call failed").slice(0, ERROR_MAX_CHARS) });
-				return;
-			}
-			if (status === "working" || status === "error") setStatus("idle");
+				tracker?.reset(); await flush();
+				const state = store.readState(id), status = state?.status;
+				if (lastRun?.stopReason === "error") {
+					const reason = (lastRun.errorMessage ?? "Model call failed").slice(0, ERROR_MAX_CHARS);
+					setStatus("blocked", { reason });
+					if (!host.identity?.interactable) notifyParent(`FAILED: ${reason}`);
+					return;
+				}
+				if (event.aborted && !state?.handoff) {
+					setStatus("blocked", { reason: state?.reason ?? "Run interrupted; inspect effects before continuing" }); return;
+				}
+				const summary = textOf(lastRun).slice(0, SUMMARY_MAX_CHARS) || "(no output)";
+				if (pendingYieldRequest && !state?.handoff && status !== "waiting-on-parent") await finishHandoff("user", summary);
+				else if (!host.identity?.interactable && !state?.handoff && status !== "waiting-on-parent" && status !== "blocked") await finishHandoff("parent", summary);
+				else if (status === "working") setStatus("idle", { reason: undefined });
 			} finally {
+				pendingYieldRequest = false;
+				host.pendingYield = undefined;
+				host.soleYieldCallId = undefined;
 				await receipt();
 				await connection?.request("activity", { busy: false });
 			}

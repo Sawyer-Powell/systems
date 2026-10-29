@@ -39,16 +39,16 @@ test("durable receipts and singleton fencing survive daemon restart", async () =
 		for (let i = 0; i < 7; i++) {
 			const id = `worker.old-lost.${i}`;
 			await client.request("create", { input: { ...input, id, role: "worker", parent: input.id, depth: 1 } });
-			runtime.database.store.writeState(id, { status: "waiting-on-user", activity: { lastSeenAt: 0, lastEventAt: 0 } });
+			runtime.database.store.writeState(id, { status: "needs-you", activity: { lastSeenAt: 0, lastEventAt: 0 } });
 			runtime.database.setRuntime(id, "blocked", { token: "unknown", settled: false });
 		}
-		await assert.rejects(client.request("mark-done", { id: "worker.old-lost.0" }), /live or ambiguous/);
+		await assert.rejects(client.request("request-yield", { id: "worker.old-lost.0" }), /blocked execution owner/);
 		const waiting = "worker.genuine-wait";
 		await client.request("create", { input: { ...input, id: waiting, role: "worker", parent: input.id, depth: 1 } });
-		runtime.database.store.writeState(waiting, { status: "waiting-on-user" });
+		runtime.database.store.writeState(waiting, { status: "needs-you" });
 		const widget = runtime.database.widget(input.id);
 		assert.ok(widget.records.some(r => r.input.id === waiting), "old blocked stored waiting states cannot hide a real waiting agent");
-		assert.ok(!widget.records.some(r => r.input.id.startsWith("worker.old-lost.")));
+		assert.equal(widget.records.filter(r => r.input.id.startsWith("worker.old-lost.")).length, 7, "blocked records retain their own priority and never decay away");
 		const child = { ...input, id: "worker.interrupted", parent: input.id, role: "worker", depth: 1 };
 		await client.request("create", { input: child });
 		runtime.database.setRuntime(child.id, "live", { token: "old-owner", pid: process.pid, settled: false });
@@ -56,7 +56,7 @@ test("durable receipts and singleton fencing survive daemon restart", async () =
 		await runtime.close();
 		runtime = await startDaemon(home);
 		assert.equal(runtime.database.runtime(child.id)?.residency, "blocked");
-		assert.equal(runtime.database.store.record(child.id)?.status, "lost");
+		assert.equal(runtime.database.store.record(child.id)?.status, "blocked");
 		const reconnected = new RuntimeClient();
 		try {
 			await reconnected.connect(home);

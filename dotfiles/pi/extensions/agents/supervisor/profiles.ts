@@ -123,7 +123,7 @@ export function fromFrontmatter(frontmatter: Record<string, unknown>, body: stri
 	};
 }
 
-export function loadProfiles(dir = path.join(getAgentDir(), "agents")): Map<string, ProfileInput> {
+export function loadProfiles(dir = process.env.PI_AGENTS_PROFILES?.trim() || path.join(getAgentDir(), "agents")): Map<string, ProfileInput> {
 	const profiles = new Map<string, ProfileInput>();
 	if (!fs.existsSync(dir)) return profiles;
 	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

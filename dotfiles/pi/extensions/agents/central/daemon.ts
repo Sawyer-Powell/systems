@@ -11,8 +11,8 @@ import { frames, send, socketPath } from "./ipc.ts";
 import { buildChildArgs, killGroup } from "../supervisor/launch.ts";
 import { agentToolNames } from "../tool-names.ts";
 import { processStartTime, stallOf, deliveryForParent } from "../store/store.ts";
-import { LOST_DONE_SUMMARY } from "../store/done.ts";
-import { MODEL_FIRST_EVENT_MS, MODEL_SILENCE_MS, OVERRUN_GRACE_MS } from "../store/types.ts";
+import { planYield } from "../store/handoff.ts";
+import { AGENT_STATUSES, SUMMARY_MAX_CHARS, type AgentMessage, MODEL_FIRST_EVENT_MS, MODEL_SILENCE_MS, OVERRUN_GRACE_MS } from "../store/types.ts";
 
 interface Live {
 	id: string; owner: Owner; child?: ChildProcess; bridge?: net.Socket;
@@ -46,7 +46,7 @@ export async function startDaemon(home = runtimeHome()) {
 		if (!owner && store.readInput(String(r.id))?.parent === null) database.setRuntime(String(r.id), "parked");
 		else {
 			database.setRuntime(String(r.id), "blocked", owner);
-			store.writeState(String(r.id), { summary: "Runtime restarted with an interrupted or ambiguous owner; explicit resume required." });
+			store.writeState(String(r.id), { status: "blocked", reason: "Runtime restarted with an interrupted or ambiguous owner; explicit resume required." });
 		}
 	}
 	function lifecycle(fn: () => void) {
@@ -71,7 +71,7 @@ export async function startDaemon(home = runtimeHome()) {
 	}
 	function stallDeadline(l: Live): number | undefined {
 		const record = store.record(l.id), state = record?.state;
-		if (l.settled || !state || !["working", "starting"].includes(state.status)) return undefined;
+		if (l.settled || !state || state.status !== "working") return undefined;
 		const step = state.activity.inFlight;
 		if (step?.deadline !== undefined) return step.deadline + OVERRUN_GRACE_MS + 1;
 		const since = Math.max(state.activity.lastEventAt, step?.startedAt ?? 0);
@@ -88,7 +88,7 @@ export async function startDaemon(home = runtimeHome()) {
 		const message = store.readInbox(l.id)[0];
 		if (!message) { idle(l); return; }
 		l.parkAt = undefined; l.delivery = message.id;
-		if (message.deliver === "context" && (message.kind !== "control" || message.control === "done")) { l.settled = false; l.stallAt = stallDeadline(l); }
+		if (message.deliver === "context" && (message.kind !== "control" || message.control === "request-yield")) { l.settled = false; l.stallAt = stallDeadline(l); }
 		send(l.bridge, { event: "mail", data: message }); persist(l, "live"); schedule();
 	}
 	async function reconcile(id: string) {
@@ -114,12 +114,15 @@ export async function startDaemon(home = runtimeHome()) {
 		if (closing || managedCount() >= cap) return;
 		const ready = db.prepare(`SELECT DISTINCT a.id FROM messages m JOIN agents a ON a.id=m.recipient
 		 WHERE m.receipt IS NULL AND a.residency='parked' AND a.parent IS NOT NULL
-		 AND json_extract(m.payload,'$.deliver')='context' ORDER BY m.seq LIMIT ?`).all(cap - managedCount());
+		 AND a.status NOT IN ('archived','blocked') AND json_extract(m.payload,'$.deliver')='context' ORDER BY m.seq LIMIT ?`).all(cap - managedCount());
 		for (const row of ready) wake(String(row.id));
 	}
 	function wake(id: string, foreground = false, explicit = false) {
+		const status = store.readState(id)?.status;
+		if (status === "archived") throw new Error("Agent is archived; explicitly restore it first");
 		const existing = live.get(id);
 		if (existing) { if (existing.parking) existing.wakeAfterExit = true; return; }
+		if (status === "blocked" && !explicit) throw new Error("Agent is blocked; explicit recovery required");
 		const input = store.readInput(id), runtime = database.runtime(id);
 		if (!input || !runtime) throw new Error(`Unknown agent ${id}`);
 		if (!input.parent) return; // human roots are clients, never managed runners
@@ -129,7 +132,7 @@ export async function startDaemon(home = runtimeHome()) {
 			if (runtime.owner && (alive(runtime.owner.pid) || alive(runtime.owner.master) || !runtime.owner.pid)) throw new Error("Old execution owner is still live or ambiguous; refusing a second writer");
 		}
 		if (!foreground && managedCount() >= cap) return;
-		if (explicit) store.writeState(id, { status: "idle", summary: undefined, note: undefined, waitingOn: undefined, runStartedAt: Date.now(), activity: { lastEventAt: Date.now(), lastSeenAt: Date.now(), inFlight: null } });
+		if (explicit) store.writeState(id, { status: "idle", reason: undefined, handoff: undefined, summary: undefined, note: undefined, waitingOn: undefined, runStartedAt: Date.now(), activity: { lastEventAt: Date.now(), lastSeenAt: Date.now(), inFlight: null } });
 		const owner: Owner = { token: crypto.randomUUID(), settled: false };
 		const l: Live = { id, owner, settled: false, attachments: new Set(), unknownAttachment: false, parking: false, safeExit: false, wakeAfterExit: false, startupAt: Date.now() + 30_000 };
 		live.set(id, l); persist(l, "starting");
@@ -145,9 +148,9 @@ export async function startDaemon(home = runtimeHome()) {
 				stdio: ["ignore", fd, fd], detached: true,
 			});
 			fs.closeSync(fd); l.child = child; owner.master = child.pid; persist(l, "starting");
-			child.once("error", error => lifecycle(() => { store.writeState(id, { status: "error", summary: `Launch failed: ${error.message}` }); exited(l); }));
+			child.once("error", error => lifecycle(() => { store.writeState(id, { status: "blocked", reason: `Launch failed: ${error.message}` }); exited(l); }));
 			child.once("exit", () => lifecycle(() => exited(l)));
-		} catch (error) { store.writeState(id, { status: "error", summary: String(error) }); exited(l); throw error; }
+		} catch (error) { store.writeState(id, { status: "blocked", reason: String(error) }); exited(l); throw error; }
 		schedule();
 	}
 	function exited(l: Live) {
@@ -157,7 +160,7 @@ export async function startDaemon(home = runtimeHome()) {
 		const safe = l.safeExit && !alive(l.owner.pid);
 		database.setRuntime(l.id, safe ? "parked" : "blocked", safe ? undefined : l.owner);
 		if (!safe) {
-			store.writeState(l.id, { summary: "Execution exited unexpectedly; explicit resume required. No tools were automatically replayed." });
+			store.writeState(l.id, { status: "blocked", reason: store.readState(l.id)?.reason ?? "Execution exited unexpectedly; explicit resume required. No tools were automatically replayed." });
 			const parent = store.readInput(l.id)?.parent;
 			if (parent) accept({ from: l.id, to: parent, kind: "stall", body: "Execution exited; explicit recovery required. No tools were automatically replayed.", deliver: deliveryForParent(store, parent) });
 		}
@@ -173,11 +176,11 @@ export async function startDaemon(home = runtimeHome()) {
 		const now = Date.now();
 		for (const l of live.values()) {
 			if (l.startupAt && l.startupAt <= now) {
-				l.startupAt = undefined; store.writeState(l.id, { status: "error", summary: "Runner did not complete ownership handshake; ownership is ambiguous. Inspect its log and owner before recovery." }); database.setRuntime(l.id, "blocked", l.owner); changed(l.id);
+				l.startupAt = undefined; store.writeState(l.id, { status: "blocked", reason: "Runner did not complete ownership handshake; ownership is ambiguous. Inspect its log and owner before recovery." }); database.setRuntime(l.id, "blocked", l.owner); changed(l.id);
 				// Do not assume a missing bridge proves a missing writer.
 			}
 			if (l.runAt && l.runAt <= now) {
-				l.runAt = undefined; store.writeState(l.id, { status: "timed-out", summary: "Whole-run timeout exceeded" });
+				l.runAt = undefined; store.writeState(l.id, { status: "blocked", reason: "Whole-run timeout exceeded; inspect work before explicit recovery" });
 				if (l.bridge) send(l.bridge, { event: "stop", data: {} }); changed(l.id);
 			}
 			if (l.stallAt && l.stallAt <= now) {
@@ -185,6 +188,7 @@ export async function startDaemon(home = runtimeHome()) {
 				const record = store.record(l.id)!; const report = stallOf(record, now);
 				if (report && report.kind !== l.stallKey) {
 					l.stallKey = report.kind;
+					store.writeState(l.id, { status: "blocked", reason: `${report.kind}: ${report.detail}` });
 					if (record.input.parent) accept({ from: l.id, to: record.input.parent, kind: "stall", body: `${report.kind}: ${report.detail}`, deliver: deliveryForParent(store, record.input.parent) });
 					changed(l.id, "stall");
 				}
@@ -199,12 +203,63 @@ export async function startDaemon(home = runtimeHome()) {
 		}
 		schedule();
 	}
-	function accept(partial: Parameters<typeof store.send>[0]) {
-		const message = store.send(partial); changed(message.to, "mail");
+	function dispatch(message: AgentMessage) {
+		if (message.to === "user" || store.readState(message.to)?.status === "archived") return;
+		if (!store.readInbox(message.to).some(m => m.id === message.id)) return;
 		const l = live.get(message.to);
-		if (l) { if (l.parking && message.deliver === "context") l.wakeAfterExit = true; else pump(l); }
-		else if (message.deliver === "context" && database.runtime(message.to)?.residency === "parked") wake(message.to);
-		return message;
+		try {
+			if (l) { if (l.parking && message.deliver === "context") l.wakeAfterExit = true; else pump(l); }
+			else if (message.deliver === "context" && store.readState(message.to)?.status !== "blocked" && database.runtime(message.to)?.residency === "parked") wake(message.to);
+		} catch (error) {
+			// Acceptance already committed. A failed notification/launch is blocked delivery,
+			// never an excuse to report that this durable message was not accepted.
+			store.writeState(message.to, { status: "blocked", reason: `Delivery deferred: ${String(error).slice(0, 500)}` });
+			if (l) { l.parkAt = undefined; l.bridge = undefined; }
+			changed(message.to, "blocked");
+		}
+	}
+	function deliveryResult(message: AgentMessage) {
+		const state = store.readState(message.to);
+		const deferred = state?.status === "archived" ? "archived" : state?.status === "blocked" && !live.has(message.to) ? "blocked"
+			: store.readInput(message.to)?.parent === null && !live.has(message.to) ? "unavailable-root" : undefined;
+		return { ...message, deferred };
+	}
+	function accept(partial: Parameters<typeof store.send>[0]) {
+		const message = store.send(partial); changed(message.to, "mail"); dispatch(message);
+		return deliveryResult(message);
+	}
+	function handoff(id: string, to: "parent" | "user", body: string, messageId: string) {
+		const input = store.readInput(id), state = store.readState(id);
+		if (!input?.parent || !state || state.status === "archived") throw new Error("Only an active managed child can yield");
+		if (to !== "parent" && to !== "user") throw new Error("Yield recipient must be parent or user");
+		if (to === "user" && !input.interactable && !state.yieldRequested) throw new Error("This profile yields to parent unless the human explicitly requested a handoff");
+		if (state.yieldRequested && to !== "user") throw new Error("The human requested this handoff; yield to user");
+		const recipient = to === "parent" ? input.parent : "user";
+		let message: AgentMessage;
+		db.exec("BEGIN IMMEDIATE");
+		try {
+			message = store.send({ id: messageId, from: id, to: recipient, kind: "yield", body, deliver: to === "parent" ? "context" : "ui" });
+			store.writeState(id, { status: to === "parent" ? "idle" : "needs-you", summary: body.slice(0, SUMMARY_MAX_CHARS),
+				reason: undefined, waitingOn: undefined, note: undefined, yieldRequested: undefined,
+				handoff: { to, recipient, messageId: message.id, at: message.ts } });
+			db.exec("COMMIT");
+		} catch (error) { db.exec("ROLLBACK"); throw error; }
+		changed(id, "yield"); changed(recipient, "mail"); dispatch(message);
+		return deliveryResult(message);
+	}
+	function archiveAction(id: string, actor: string, identity: string | undefined, restore: boolean) {
+		const input = store.readInput(id), state = store.readState(id), runtime = database.runtime(id);
+		if (!input || !state || !runtime) throw new Error("Unknown agent");
+		if (actor !== "user" && (actor !== identity || actor === id || input.parent !== actor)) throw new Error("Only the user or direct owning parent may archive/restore an agent");
+		if (restore) {
+			if (state.status !== "archived") throw new Error("Agent is not archived");
+			store.writeState(id, { status: "idle", reason: undefined }); changed(id, "restore"); work(); return;
+		}
+		if (state.status === "archived") return;
+		if (state.status === "blocked" || live.has(id) || runtime.residency !== "parked" || (runtime.owner && (!runtime.owner.pid || alive(runtime.owner.pid) || alive(runtime.owner.master)))) {
+			throw new Error("Archive requires a detached, fully settled, safely parked session. Detach and await idle parking; resolve blocked ownership first. Nothing was interrupted.");
+		}
+		store.writeState(id, { status: "archived" }); database.setRuntime(id, "parked"); changed(id, "archive");
 	}
 	const server = net.createServer(socket => {
 		clients.add(socket); subscribers.add(socket);
@@ -220,18 +275,25 @@ export async function startDaemon(home = runtimeHome()) {
 						case "create": store.create(a.input); changed(a.input.id); break;
 						case "state": {
 							if (identity && (identity !== a.id || live.get(identity)?.bridge !== socket)) throw new Error("May not write another live runner's state");
+							if (a.patch.status && !AGENT_STATUSES.includes(a.patch.status)) throw new Error("Unknown workflow state");
+							if (a.patch.status === "archived" || store.readState(a.id)?.status === "archived") throw new Error("Use explicit archive/restore authority, not a state write");
 							result = store.writeState(a.id, a.patch);
 							const l = live.get(a.id);
 							if (l) { l.stallKey = undefined; l.stallAt = stallDeadline(l); }
 							changed(a.id); schedule(); break;
 						}
-						case "mark-done": {
-							const input = store.readInput(a.id), owner = database.runtime(a.id)?.owner;
-							if (!input?.parent || live.has(a.id) || (owner && !owner.pid) || alive(owner?.pid) || alive(owner?.master)) throw new Error("Execution owner is live or ambiguous; cannot mark done");
-							store.writeState(a.id, { status: "done", summary: LOST_DONE_SUMMARY, waitingOn: undefined, note: undefined });
-							accept({ from: a.id, to: input.parent, kind: "result", body: `MARKED DONE by the user: ${LOST_DONE_SUMMARY}`, deliver: deliveryForParent(store, input.parent) });
-							changed(a.id); break;
+						case "yield": {
+							if (identity !== a.id || live.get(a.id)?.bridge !== socket) throw new Error("Only the current session owner may yield itself");
+							result = handoff(a.id, a.to, a.message, a.messageId); break;
 						}
+						case "request-yield": {
+							const record = store.record(a.id); if (!record) throw new Error("Unknown agent");
+							const plan = planYield(record); if (plan.action === "refuse") throw new Error(plan.reason);
+							store.writeState(a.id, { yieldRequested: true });
+							result = accept({ from: "user", to: a.id, kind: "control", control: "request-yield", body: "Hand work back to the human", deliver: "context" }); break;
+						}
+						case "archive": archiveAction(a.id, a.actor, identity, false); break;
+						case "restore": archiveAction(a.id, a.actor, identity, true); break;
 						case "send": result = accept(a.message); break;
 						case "spawn": store.create(a.input); accept({ from: "user", to: a.input.id, kind: "instruction", body: a.input.objective, deliver: "context", id: `initial:${a.input.id}` }); result = a.input; break;
 						case "resume": {
@@ -243,6 +305,7 @@ export async function startDaemon(home = runtimeHome()) {
 							identity = a.id;
 							let l = live.get(a.id); const input = store.readInput(a.id);
 							if (!input) throw new Error("Unknown agent");
+							if (store.readState(a.id)?.status === "archived") throw new Error("Archived session requires explicit restore");
 							if (input.parent && (!l || l.owner.token !== a.token || (l.bridge && l.owner.pid !== a.pid))) throw new Error("Invalid or duplicate session owner");
 							if (!input.parent) {
 								const previous = database.runtime(a.id)?.owner;
@@ -334,8 +397,8 @@ export async function startDaemon(home = runtimeHome()) {
 			const l = identity && live.get(identity);
 			if (l && l.bridge === socket) {
 				l.bridge = undefined;
-				if (!store.readInput(l.id)?.parent) { live.delete(l.id); store.writeState(l.id, { status: "dormant" }); database.setRuntime(l.id, "parked", l.owner); changed(l.id); }
-				else if (!l.safeExit) { l.parkAt = undefined; store.writeState(l.id, { summary: "Runner bridge disconnected; ownership remains fenced until process exit." }); changed(l.id); }
+				if (!store.readInput(l.id)?.parent) { live.delete(l.id); store.writeState(l.id, { status: "idle" }); database.setRuntime(l.id, "parked", l.owner); changed(l.id); }
+				else if (!l.safeExit) { l.parkAt = undefined; store.writeState(l.id, { status: "blocked", reason: "Runner bridge disconnected; ownership remains fenced until process exit." }); changed(l.id); }
 			}
 			schedule();
 		}));

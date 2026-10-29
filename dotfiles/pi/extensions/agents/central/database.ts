@@ -12,7 +12,7 @@ export interface RuntimeRow { residency: Residency; owner?: Owner }
 export function mergeState(current: AgentState | undefined, patch: Parameters<Store["writeState"]>[1]): AgentState {
 	const now = Date.now();
 	const clean = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v === null ? undefined : v]));
-	const base = current ?? { status: "starting", since: now, activity: { lastEventAt: now, lastSeenAt: now, inFlight: null } };
+	const base = current ?? { status: "idle", since: now, activity: { lastEventAt: now, lastSeenAt: now, inFlight: null } };
 	return { ...base, ...clean, since: clean.status && clean.status !== base.status ? now : base.since,
 		activity: { ...base.activity, ...patch.activity } } as AgentState;
 }
@@ -43,7 +43,7 @@ export function openDatabase(home = runtimeHome(), writable = false) {
 		const residency = r.residency as Residency;
 		const alive = residency === "live" || residency === "parking";
 		return { input, state, alive, residency,
-			status: residency === "blocked" && !["done", "stopped", "error", "timed-out"].includes(state.status) ? "lost" : residency === "starting" ? "starting" : state.status };
+			status: residency === "blocked" && state.status !== "archived" ? "blocked" : state.status };
 	};
 	const query = (sql: string, ...args: (string | number)[]) => db.prepare(sql).all(...args).map(r => record(r)!);
 	const store: Store = {
@@ -85,7 +85,8 @@ export function openDatabase(home = runtimeHome(), writable = false) {
 			return from === "user" || from.startsWith("user:") || store.ancestors(from).some(r => r.input.id === to) || store.ancestors(to).some(r => r.input.id === from);
 		},
 		send(partial) {
-			if (!store.canMessage(partial.from, partial.to)) throw new Error(`${partial.from} may not message ${partial.to}`);
+			const userHandoff = partial.kind === "yield" && partial.to === "user" && store.exists(partial.from);
+			if (!userHandoff && !store.canMessage(partial.from, partial.to)) throw new Error(`${partial.from} may not message ${partial.to}`);
 			const message: AgentMessage = { ...partial, id: partial.id ?? crypto.randomUUID(), ts: partial.ts ?? Date.now() };
 			const existing = db.prepare("SELECT payload FROM messages WHERE id=?").get(message.id);
 			if (existing) {
@@ -103,23 +104,15 @@ export function openDatabase(home = runtimeHome(), writable = false) {
 			// Rank compact metadata in SQLite; decode only seven candidates per triage group and
 			// live runners (whose stall priority is computed by the shared pure UI model).
 			const scope = `WITH RECURSIVE tree(id) AS (SELECT id FROM agents WHERE parent=? UNION ALL SELECT a.id FROM agents a JOIN tree t ON a.parent=t.id),
-			 scoped AS (SELECT a.*,p.parent AS grandparent,p.residency AS parentResidency,
-			 CASE WHEN a.residency='blocked' AND a.status NOT IN ('done','stopped','error','timed-out') THEN 'lost'
-			 WHEN a.residency='starting' THEN 'starting' ELSE a.status END AS effective
-			 FROM agents a JOIN tree t ON a.id=t.id LEFT JOIN agents p ON p.id=a.parent),
-			 ranked AS (SELECT *, CASE
-			 WHEN effective='waiting-on-user' OR (effective='waiting-on-parent' AND (grandparent IS NULL OR parentResidency NOT IN ('live','parking')))
-			 OR (effective='error' AND since>=?) OR (effective='lost' AND json_extract(state,'$.activity.lastSeenAt')>=?) THEN 0
-			 WHEN effective IN ('working','starting') THEN 1 ELSE 2 END AS grp,
-			 CASE WHEN effective='lost' THEN json_extract(state,'$.activity.lastSeenAt') ELSE since END AS age
-			 FROM scoped),
-			 visible AS (SELECT * FROM ranked WHERE grp<2 OR age>=? OR residency IN ('live','parking'))`;
-			const args = [id, now - 86400000, now - 86400000, now - 600000] as const;
-			// Match the pure triage sort BEFORE limiting. In particular old lost/waiting records
-			// must not crowd genuine waiting agents out of the bounded candidate set.
+			 scoped AS (SELECT a.*,CASE WHEN residency='blocked' AND status!='archived' THEN 'blocked' ELSE status END AS effective
+			 FROM agents a JOIN tree t ON a.id=t.id),
+			 ranked AS (SELECT *,CASE effective WHEN 'needs-you' THEN 0 WHEN 'blocked' THEN 1 WHEN 'working' THEN 2
+			 WHEN 'waiting-on-parent' THEN 3 ELSE 4 END AS grp FROM scoped WHERE effective!='archived'),
+			 visible AS (SELECT * FROM ranked WHERE grp<4 OR since>=? OR residency IN ('live','parking'))`;
+			const args = [id, now - 600000] as const;
+			// Needs-you/blocked/waiting never decay into idle or disappear because of age.
 			const rows = query(`${scope}, numbered AS (SELECT *,ROW_NUMBER() OVER (PARTITION BY grp ORDER BY
-			 CASE WHEN grp=2 THEN -age WHEN grp=1 THEN coalesce(json_extract(state,'$.runStartedAt'),since)
-			 WHEN effective='lost' THEN json_extract(state,'$.activity.lastEventAt') ELSE since END) AS n FROM visible)
+			 CASE WHEN grp=4 THEN -since WHEN grp=2 THEN coalesce(json_extract(state,'$.runStartedAt'),since) ELSE since END) AS n FROM visible)
 			 SELECT * FROM numbered WHERE n<=7 OR residency IN ('live','parking')`, ...args);
 			const total = Number(db.prepare(`${scope} SELECT count(*) AS n FROM visible`).get(...args)?.n ?? 0);
 			const parents = new Set(rows.map(r => r.input.parent).filter((v): v is string => Boolean(v)));

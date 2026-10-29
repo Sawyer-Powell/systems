@@ -224,7 +224,7 @@ export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() ||
 			fs.writeFileSync(inputFile(input.id), JSON.stringify(input, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 			const now = Date.now();
 			writeJsonAtomic(stateFile(input.id), {
-				status: "starting",
+				status: "idle",
 				since: now,
 				runStartedAt: now,
 				activity: { lastEventAt: now, lastSeenAt: now, inFlight: null },
@@ -234,7 +234,7 @@ export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() ||
 		writeState(id, patch) {
 			const now = Date.now();
 			const current = store.readState(id) ?? {
-				status: "starting" as const,
+				status: "idle" as const,
 				since: now,
 				activity: { lastEventAt: now, lastSeenAt: now, inFlight: null },
 			};
@@ -332,13 +332,13 @@ export function createStore(home: string = process.env.PI_AGENTS_HOME?.trim() ||
  */
 export function stallOf(record: AgentRecord, now = Date.now()): StallReport | undefined {
 	const { input, state, status } = record;
-	if (!state || isTerminal(status) || status === "dormant" || record.residency === "parked") return undefined;
-	if (status === "lost") {
-		return { kind: "lost", overMs: now - state.activity.lastSeenAt, detail: `process gone while ${state.status}` };
+	if (!state || status === "archived" || record.residency === "parked") return undefined;
+	if (status === "blocked") {
+		return record.alive ? undefined : { kind: "lost", overMs: now - state.activity.lastSeenAt, detail: state.reason ?? "Execution owner is unavailable" };
 	}
 
 	const runStart = state.runStartedAt ?? input.createdAt;
-	if (input.runTimeoutMs !== undefined && now - runStart > input.runTimeoutMs) {
+	if (state.status === "working" && input.runTimeoutMs !== undefined && now - runStart > input.runTimeoutMs) {
 		return {
 			kind: "run-overrun",
 			overMs: now - runStart - input.runTimeoutMs,
@@ -346,7 +346,7 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 		};
 	}
 
-	if (!record.residency && now - state.activity.lastSeenAt > WEDGED_AFTER_MS) {
+	if (record.alive && state.status === "working" && !record.residency && now - state.activity.lastSeenAt > WEDGED_AFTER_MS) {
 		return {
 			kind: "wedged",
 			overMs: now - state.activity.lastSeenAt - WEDGED_AFTER_MS,
@@ -355,7 +355,7 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 	}
 
 	// Only a working agent can stall; idle and waiting agents are expected to be quiet.
-	if (state.status !== "working" && state.status !== "starting") return undefined;
+	if (state.status !== "working") return undefined;
 
 	const { inFlight, lastEventAt } = state.activity;
 	if (inFlight?.deadline !== undefined && now > inFlight.deadline + OVERRUN_GRACE_MS) {
@@ -388,11 +388,9 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 
 /** Dead and not terminal means lost, except a dormant root (expected to be unloaded) and just after launch when the lock does not exist yet. */
 function statusOf(state: AgentState | undefined, alive: boolean, now = Date.now()): EffectiveStatus {
-	if (!state) return "lost";
-	if (isTerminal(state.status)) return state.status;
-	if (alive || state.status === "dormant") return state.status;
-	if (state.status === "starting" && now - state.since < STARTING_GRACE_MS) return "starting";
-	return "lost";
+	if (!state) return "blocked";
+	if (state.status === "working" && !alive) return "blocked";
+	return state.status;
 }
 
 function lockOwnerAlive(lock: LockFile): boolean {
