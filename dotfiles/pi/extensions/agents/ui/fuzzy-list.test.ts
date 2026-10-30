@@ -83,7 +83,7 @@ describe("fuzzy list keys", () => {
 		const last = on.seenToggles.at(-1)!;
 		assert.equal(last.scope, "subtree");
 		assert.equal(last.showFinished, true);
-		assert.match(on.comp.render(80).join("\n"), /my subtree · incl\. finished/);
+		assert.match(on.comp.render(80).join("\n"), /my subtree · incl\. archived/);
 	});
 	it("aligns cells into columns", () => {
 		const { comp } = make();
