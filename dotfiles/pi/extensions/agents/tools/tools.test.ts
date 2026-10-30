@@ -123,6 +123,21 @@ describe("flows", () => {
 		assert.equal(requests[0]?.reporting, undefined);
 		assert.equal(requests[1]?.reporting, "Notify on regression; final: evidence.");
 	});
+	it("spawn_agent passes timeouts only when the caller explicitly asks", async () => {
+		const requests: Array<{ stepTimeoutMs?: number; runTimeoutMs?: number }> = [];
+		const tools = harness(mk("main.root.0001", null), true, {
+			spawn: async (request) => {
+				requests.push(request);
+				return mk("worker.x.9999", "main.root.0001");
+			},
+		});
+		await run(tools, "spawn_agent", { profile: "worker", objective: "do" });
+		await run(tools, "spawn_agent", { profile: "worker", objective: "do", step_timeout_seconds: 30, run_timeout_seconds: 60 });
+		assert.equal(requests[0]?.stepTimeoutMs, undefined, "no default step timeout");
+		assert.equal(requests[0]?.runTimeoutMs, undefined, "no default whole-run limit");
+		assert.equal(requests[1]?.stepTimeoutMs, 30_000);
+		assert.equal(requests[1]?.runTimeoutMs, 60_000);
+	});
 	it("spawn_agent reports id and how to reach it", async () => {
 		const tools = harness(mk("main.root.0001", null), true, {
 			spawn: async (r: { profile: string }) => mk(`${r.profile}.x.9999`, "main.root.0001"),

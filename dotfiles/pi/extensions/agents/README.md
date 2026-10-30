@@ -18,6 +18,24 @@ Residency (parked/starting/live/parking/blocked ownership) is independent. A mis
 process is not failure. Startup, provider failure, crash and timeout are execution details
 or blocked reasons, not extra workflow states. There is no model-controlled done state.
 
+## No default timeouts
+
+Agents have **no time limit** unless a caller explicitly asks for one. `spawn_agent` accepts
+optional `step_timeout_seconds` (silence before a step is treated as a stall) and
+`run_timeout_seconds` (whole-run limit, non-interactable profiles only); omitted means
+unlimited, and profile frontmatter sets neither. A ten-minute bash call, a slow provider
+request or hours of research therefore stays `working` instead of being flipped to `blocked`
+just for taking a long time. Triage groups an agent by its current record state, so a stale
+stall notice can never mask a live agent.
+
+The trade-off is deliberate: with no step timeout, a genuinely hung provider request or an
+agent looping forever also stays `working`. What still surfaces a real hang is broken
+execution ownership (`lost`: the process is gone; `wedged`: a live process stopped its
+heartbeat), an explicit bash `timeout` the model declared (`overrun`), the first-token
+deadline for `xhigh`/`max` thinking, and the human/parent acting explicitly through
+`interrupt_agent`, `/agent-yield` or `kill_agent`. Pass an explicit timeout when silence
+really should mean a hang.
+
 ## Handoffs and retirement
 
 - One tool: `yield(to: "parent" | "user", message: string)`. Call it alone as the final tool.
@@ -144,9 +162,11 @@ Do not end()/shutdown() the inherited lease while its client lives.
   admissions. Attach/recovery may exceed the cap; active/attached work is not killed to
   enforce it. `PI_AGENTS_NODE`/`PI_AGENTS_PI` choose native executables.
 - `PI_AGENTS_PROFILES`: explicit markdown profile directory override. Otherwise profiles
-  load from Pi's agent-dir/agents, as before. The source worker/intuition/scout prompts and
-  source APPEND_SYSTEM.md use the new tools. Canonical source integration updates the existing
-  Home Manager source symlinks; copied/custom profiles and prompts are not rewritten.
+  load from Pi's agent-dir/agents, as before. Profile frontmatter has no timeout key: limits
+  are per-spawn opt-ins, so a non-interactable profile is never silently cut off. The source
+  worker/intuition/scout prompts and source APPEND_SYSTEM.md use the new tools. Canonical
+  source integration updates the existing Home Manager source symlinks; copied/custom
+  profiles and prompts are not rewritten.
   For isolated use set this override
   to this checkout's `dotfiles/pi/agents` and use a fresh `PI_CODING_AGENT_DIR`; do not reuse
   installed old report_done/ask_user prompts. Review custom prompts before later deployment.

@@ -23,8 +23,9 @@ and profile overrides. See README for current host switch command.
 
 Workflow has exactly six states: **working, idle, waiting-on-parent, needs-you, blocked,
 archived**. Completion is message content, not a self-controlled success/retirement state.
-Blocked has a displayed reason; crash, timeout, provider failure and unresolved ownership
-are reasons, not more workflow states. Startup/parking are residency details.
+Blocked has a displayed reason; crash, an explicitly requested timeout, provider failure and
+unresolved ownership are reasons, not more workflow states. Timeouts are opt-in and absent by
+default (see Sparse supervision). Startup/parking are residency details.
 
 Residency: parked/starting/live/parking/blocked execution ownership. Pi alone owns its
 session JSONL; daemon alone owns SQLite metadata/mail. An idle/attention/question session
@@ -166,8 +167,14 @@ its client lives. No replacement chat renderer, RPC/TUI handoff or duplicate ses
 
 ## Sparse supervision and UI
 
-One central nearest timer covers only live launch/run/stall/parking deadlines. Actual
-long tool/model thresholds are scheduled, not forgotten after an early step-timeout check.
+One central nearest timer covers only live launch/run/stall/parking deadlines. Step and whole-run
+limits are explicit opt-in per spawn; without one no stall deadline is scheduled at all, so an
+in-flight tool or model call may run indefinitely and stays `working`. Deliberate trade-off: a hung
+provider request or a looping agent also stays `working`. What still surfaces a real hang is broken
+owner detection (`lost` when the process is gone, `wedged` when a live process stops heartbeating),
+an explicit bash `timeout` the model declared (`overrun`), the slow-thinking first-token deadline,
+and explicit human/parent interruption. Triage derives its groups from the current record state, so
+a stale stall notice never masks a live/working agent.
 No per-Pi watchdog/heartbeat/mailbox poll or per-parked/archived object/timer/watch/PID scan.
 Compaction pins busy state; managed idle cache warming is disabled. Idle interrupt controls
 do not manufacture a model run. Active crash/timeout is blocked with reason and explicit

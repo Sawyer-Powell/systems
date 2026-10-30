@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentInput, Store } from "../store/index.ts";
-import { DEFAULT_STEP_TIMEOUT_MS } from "../store/index.ts";
 
 /**
  * Create the root agent record for a user's interactive pi. The agent id is the pi
@@ -25,7 +24,6 @@ export function createRootInput(store: Store, ctx: ExtensionContext, now = Date.
 		},
 		cwd: ctx.cwd,
 		interactable: true,
-		stepTimeoutMs: DEFAULT_STEP_TIMEOUT_MS,
 		depth: 0,
 		createdAt: now,
 		...(forkedFrom ? { forkedFrom } : {}),

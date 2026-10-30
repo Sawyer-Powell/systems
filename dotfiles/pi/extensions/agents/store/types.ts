@@ -26,9 +26,12 @@ export interface AgentInput {
 	cwd: string;
 	/** Interactable agents run under a PTY holder and may be attached to. */
 	interactable: boolean;
-	/** Max time any single step may take without events. */
-	stepTimeoutMs: number;
-	/** Whole-run limit. Only meaningful for non-interactable agents. */
+	/**
+	 * Optional explicit opt-in: max time one step may take without events before it counts as a stall.
+	 * Absent by default, and absent means no step timeout at all: a long tool or model call stays working.
+	 */
+	stepTimeoutMs?: number;
+	/** Optional explicit opt-in whole-run limit. Only meaningful for non-interactable agents. */
 	runTimeoutMs?: number;
 	depth: number;
 	/** Spawn-time depth configuration, carried into the daemon's CLI tool allowlist. */
@@ -57,7 +60,9 @@ export interface InFlight {
 	/** Short, PHI-free description (never raw tool output). */
 	summary: string;
 	startedAt: number;
-	/** Declared deadline for this step; absent means the step timeout applies. */
+	/** Declared deadline for this step (an explicit bash timeout, or the slow-thinking first-token
+	 * deadline). Absent means no deadline and no step timeout was requested: the step may run as long
+	 * as it likes. */
 	deadline?: number;
 }
 
@@ -153,19 +158,19 @@ export const STARTING_GRACE_MS = 30_000;
 export const MODEL_REQUEST_DEADLINE_MS = 600_000;
 /** Time given to a tool to die after its declared deadline before it counts as an overrun. */
 export const OVERRUN_GRACE_MS = 5_000;
-export const DEFAULT_STEP_TIMEOUT_MS = 180_000;
 /**
- * A model request with no first-token deadline (thinking below xhigh/max) that has produced no provider
- * event (thinking, text, tool call, or any other stream event) for this long is stalled, even though the
- * step timeout is longer. Thinking arrives in chunks, so this must exceed normal gaps. Tools keep the step timeout.
+ * Ceiling for an explicitly requested step timeout (`AgentInput.stepTimeoutMs`) on a model request that has
+ * produced no provider event (thinking, text, tool call, or any other stream event): silence at least this
+ * long is a stall. Thinking arrives in chunks, so this must exceed normal gaps. Tools use the step timeout as given.
+ * There is no default step timeout; without one, nothing here applies.
  */
 export const MODEL_SILENCE_MS = 120_000;
 /**
- * A model request that has produced no event at all since it started (not even the response headers) is
- * waiting for its first token, which is legitimately minutes on very large prompts. Silence this long is a stall.
+ * Ceiling for an explicitly requested step timeout on a model request that has produced no event at all since
+ * it started (not even the response headers): it is waiting for its first token, which is legitimately minutes
+ * on very large prompts.
  */
 export const MODEL_FIRST_EVENT_MS = 600_000;
-export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
 /** A live process whose heartbeat is older than this is considered wedged. */
 export const WEDGED_AFTER_MS = HEARTBEAT_MS * 4;
 

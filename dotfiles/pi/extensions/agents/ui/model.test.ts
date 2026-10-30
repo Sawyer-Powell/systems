@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AgentRecord, AgentState, AgentStatus } from "../store/index.ts";
+import type { AgentRecord, AgentState, AgentStatus, StallReport } from "../store/index.ts";
 import { agentMessageText } from "../store/index.ts";
 import { actionsFor, activityText, agentMessageView, alignCells, buildRows, claimLine, cleanSummary, filterListItems, filterRows, formatDuration, fuzzyScore, lineageText, qualifiedNames, TRIAGE_GROUPS, triage, widgetLines } from "./model.ts";
 
@@ -8,7 +8,7 @@ import { createFuzzyList } from "./fuzzy-list.ts";
 
 const NOW = 100_000_000;
 function rec(id: string, parent: string | null, status: AgentStatus, state: Partial<AgentState> = {}, name = id.split(".")[1] ?? id): AgentRecord {
-	return { input: { id, parent, name, role: parent ? "worker" : "main", objective: "trace row errors", profile: { name: "p", modelId: "m", thinking: "off" }, cwd: "/", interactable: true, stepTimeoutMs: 180000, depth: parent ? 1 : 0, createdAt: 0 },
+	return { input: { id, parent, name, role: parent ? "worker" : "main", objective: "trace row errors", profile: { name: "p", modelId: "m", thinking: "off" }, cwd: "/", interactable: true, depth: parent ? 1 : 0, createdAt: 0 },
 		state: { status, since: 0, activity: { lastEventAt: 0, lastSeenAt: 0, inFlight: null }, ...state },
 		status, alive: status === "working", residency: status === "working" ? "live" : "parked" };
 }
@@ -64,6 +64,23 @@ it("groups six states by urgency and explicit parent while search retains owners
 	const rootActions = actionsFor({ ...first, status: "archived" }, "another-root").map(([action]) => action);
 	assert.ok(rootActions.includes("restore"));
 	assert.ok(!rootActions.includes("restore-attach"), "human roots restore without daemon launch or managed attachment");
+});
+
+it("a stall notice never masks a live working agent", () => {
+	const root = rec("main.root.0001", null, "idle");
+	const busy = rec("worker.busy.a001", root.input.id, "working");
+	const wedged = rec("worker.wedged.b001", root.input.id, "working");
+	const stalls = new Map<string, StallReport>([
+		[busy.input.id, { kind: "stall", overMs: 60_000, detail: "no events" }],
+		[wedged.input.id, { kind: "wedged", overMs: 60_000, detail: "heartbeat stopped" }],
+	]);
+	const t = triage([root, busy, wedged], { ...opts, stalls });
+	// A step-timeout/run-limit notice describes a step the agent is still inside; only broken
+	// execution (wedged) may surface a working agent as blocked.
+	assert.deepEqual(ids(t.working), [busy.input.id]);
+	assert.deepEqual(ids(t.blocked), [wedged.input.id]);
+	const busyRow = t.working[0]!;
+	assert.ok(busyRow.tone !== "error" && busyRow.cells[0]?.includes("●"), "a live row keeps its working glyph and tone");
 });
 
 it("compact widget names are relative to focus without changing full picker identity", () => {

@@ -71,9 +71,11 @@ describe("planLaunch", () => {
 
 describe("profiles", () => {
 	it("parses the new frontmatter fields and composes extends", () => {
+		// Profiles set no timeouts: limits are explicit per-spawn opt-ins, never a profile default.
 		const a = fromFrontmatter({ name: "scout", interactable: false, timeout: 5, model: "fast", tools: "read, grep" }, "body");
 		assert.equal(a.interactable, false);
-		assert.equal(a.timeoutMinutes, 5);
+		assert.equal("timeoutMinutes" in a, false);
+		assert.equal("timeoutMs" in a, false);
 		assert.deepEqual(a.tools, ["read", "grep"]);
 		const map = new Map([["base", { name: "base", model: "fast" as const, prompt: "p" }], ["kid", { name: "kid", extends: ["base"], interactable: true }]]);
 		const merged = compose("kid", map);
@@ -103,7 +105,8 @@ describe("resumeMessage", () => {
 
 describe("watchdog scan", () => {
 	const tmp = useTempStore("agents-wd-");
-	const mk = (id: string, parent: string | null) => mkInput(id, parent, { role: "w", profile, createdAt: 0 });
+	// These fixtures opt in to a step timeout: that is the only way silence becomes a stall.
+	const mk = (id: string, parent: string | null) => mkInput(id, parent, { role: "w", profile, stepTimeoutMs: 180_000, createdAt: 0 });
 	beforeEach(() => {
 		tmp.store.create(mk("main.root.0001", null));
 		tmp.store.create(mk("worker.a.0002", "main.root.0001"));
@@ -133,7 +136,7 @@ describe("watchdog scan", () => {
 
 describe("stall visibility for the user", () => {
 	const tmp = useTempStore("agents-wd2-");
-	const mk = (id: string, parent: string | null) => mkInput(id, parent, { role: "w", name: id.split(".")[1], profile, createdAt: 0 });
+	const mk = (id: string, parent: string | null) => mkInput(id, parent, { role: "w", name: id.split(".")[1], profile, stepTimeoutMs: 180_000, createdAt: 0 });
 	const stalled = (id: string, lastSeenAt: number) => {
 		tmp.store.acquireLock(id);
 		tmp.store.writeState(id, { status: "working", activity: { lastEventAt: 0, lastSeenAt } });
@@ -154,6 +157,12 @@ describe("stall visibility for the user", () => {
 		assert.deepEqual(newStalls(records(), reported, 202_000), []);
 		assert.equal(reported.size, 0);
 		assert.equal(newStalls(records(), reported, 400_000).length, 1); // stalls again after recovering
+	});
+	it("a stale dedupe key from an older episode never suppresses a new notice", () => {
+		stalled("worker.b.0003", 200_000);
+		const reported = new Set<string>(["worker.b.0003:stall:999999"]); // left over while nobody scanned
+		assert.equal(newStalls([tmp.store.record("worker.b.0003")!], reported, 200_000).length, 1);
+		assert.deepEqual([...reported], ["worker.b.0003:stall:0"]); // the stale key is gone
 	});
 	it("reports a grandchild stall to the root once, as a one-line notice, without creating store messages", () => {
 		stalled("worker.b.0003", 200_000);

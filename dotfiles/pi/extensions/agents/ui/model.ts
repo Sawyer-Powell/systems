@@ -2,7 +2,7 @@
  * Pure view-model for the agents UI: tree ordering, glyphs, activity text,
  * fuzzy filtering. No pi imports so it is unit-testable.
  */
-import { type AgentMessageDetails, type AgentRecord, type EffectiveStatus, isTerminal, planYield, RESULT_ENTRY, type ResultClaim, SPAWN_ENTRY, type SpawnClaim, type StallReport } from "../store/index.ts";
+import { type AgentMessageDetails, type AgentRecord, type EffectiveStatus, isTerminal, planYield, RESULT_ENTRY, type ResultClaim, SPAWN_ENTRY, type SpawnClaim, type StallKind, type StallReport } from "../store/index.ts";
 
 import { agentName } from "../names.ts";
 
@@ -152,7 +152,7 @@ export function buildRows(records: AgentRecord[], options: BuildOptions): Row[] 
 function toRow(record: AgentRecord, options: Pick<BuildOptions, "now" | "stalls" | "breadcrumb">, extra: { depth: number; name: string; last?: string; suffix?: string; parentContext?: string }): Row {
 	const { input, status } = record;
 	const { depth, name } = extra;
-	const stalled = options.stalls?.has(input.id) ?? false;
+	const stalled = escalatedStall(record, options.stalls) !== undefined;
 	const waiting = status === "waiting-on-parent" || status === "needs-you";
 	const glyph = stalled ? "!" : GLYPHS[status];
 	const tone: Tone = stalled || status === "blocked" ? "error" : waiting ? "warning" : status === "working" ? "success" : status === "archived" ? "muted" : "text";
@@ -169,6 +169,22 @@ function toRow(record: AgentRecord, options: Pick<BuildOptions, "now" | "stalls"
 		searchText: `${input.id} ${input.parent ?? ""} ${name} ${input.role} ${STATUS_LABELS[status]} ${input.objective} ${breadcrumb}`.toLowerCase(),
 		cells: [`${"  ".repeat(depth)}${glyph} ${name}`, input.role, STATUS_LABELS[status] + (record.residency === "parked" ? " · parked" : ""), extra.last ?? activityText(record, options.now)],
 	};
+}
+
+/**
+ * Stall kinds that still surface a *working* record as blocked: the execution itself is broken even
+ * though the agent claims to work. Every other kind either repeats the record's own status (a dead
+ * owner already reports `blocked`) or describes a step the agent is visibly still inside (a step
+ * timeout, an explicit whole-run limit). Those must never mask a live agent that is still producing
+ * events - a notice is a hint about the past, the record is what is true now.
+ */
+const BROKEN_EXECUTION: readonly StallKind[] = ["wedged"];
+
+/** The stall report, if any, that a still-working record cannot express by itself. */
+function escalatedStall(record: AgentRecord, stalls: Map<string, StallReport> | undefined): StallReport | undefined {
+	if (record.status !== "working") return undefined;
+	const report = stalls?.get(record.input.id);
+	return report && BROKEN_EXECUTION.includes(report.kind) ? report : undefined;
 }
 
 export const TRIAGE_GROUPS = ["needs", "blocked", "working", "waiting", "idle", "archived"] as const;
@@ -194,7 +210,7 @@ export function triage(records: AgentRecord[], options: TriageOptions): Record<T
 		const { state, status } = record;
 		const since = stateSince(record);
 		if (status === "needs-you") return { group: "needs", sort: since, last: withTail(`waiting ${activityText(record, now)}`, state?.summary) };
-		if (status === "blocked" || stalls?.has(record.input.id)) return { group: "blocked", sort: since, last: activityText(record, now) };
+		if (status === "blocked" || escalatedStall(record, stalls)) return { group: "blocked", sort: since, last: activityText(record, now) };
 		if (status === "working") return { group: "working", sort: state?.runStartedAt ?? since, last: activityText(record, now) };
 		if (status === "waiting-on-parent") return { group: "waiting", sort: since, last: activityText(record, now) };
 		return { group: status === "archived" ? "archived" : "idle", sort: -since,

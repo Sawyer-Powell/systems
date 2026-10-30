@@ -362,30 +362,33 @@ export function stallOf(record: AgentRecord, now = Date.now()): StallReport | un
 	if (state.status !== "working") return undefined;
 
 	const { inFlight, lastEventAt } = state.activity;
-	if (inFlight?.deadline !== undefined && now > inFlight.deadline + OVERRUN_GRACE_MS) {
-		return {
-			kind: "overrun",
-			overMs: now - inFlight.deadline - OVERRUN_GRACE_MS,
-			detail: `${inFlight.kind} ${inFlight.name} past its declared deadline`,
-		};
+	// A declared deadline is the step's own limit: an explicit bash timeout, or the first-token deadline of
+	// the slowest thinking levels. It is the only deadline that exists without an explicitly requested step timeout.
+	if (inFlight?.deadline !== undefined) {
+		return now > inFlight.deadline + OVERRUN_GRACE_MS
+			? { kind: "overrun", overMs: now - inFlight.deadline - OVERRUN_GRACE_MS, detail: `${inFlight.kind} ${inFlight.name} past its declared deadline` }
+			: undefined;
 	}
-	if (inFlight?.deadline === undefined) {
-		const since = Math.max(lastEventAt, inFlight?.startedAt ?? 0);
-		// A silent model stream is a hang far sooner than a quiet tool is; never exceed the configured step timeout.
-		// Before any event since the request started it is waiting for its first token (slow on huge prompts); a step timeout
-		// shorter than the silence limit still wins.
-		const waitingForFirstEvent = inFlight?.kind === "model" && lastEventAt <= inFlight.startedAt;
-		const modelLimit = waitingForFirstEvent ? MODEL_FIRST_EVENT_MS : MODEL_SILENCE_MS;
-		const limit = inFlight?.kind === "model" ? (input.stepTimeoutMs < MODEL_SILENCE_MS ? input.stepTimeoutMs : modelLimit) : input.stepTimeoutMs;
-		if (now - since > limit) {
-			return {
-				kind: "stall",
-				overMs: now - since - limit,
-				detail: inFlight
-					? `${inFlight.kind} ${inFlight.name} in flight ${Math.round((now - inFlight.startedAt) / 1000)}s, no events for the last ${Math.round((now - since) / 1000)}s`
-					: `no events for ${Math.round((now - lastEventAt) / 1000)}s`,
-			};
-		}
+	// No step timeout was requested (the default): a tool or model call in flight may take as long as it likes and
+	// is never reported as a stall. Only broken execution surfaces then: `lost`, `wedged`, whole-run overrun.
+	if (input.stepTimeoutMs === undefined) return undefined;
+	const stepTimeoutMs = input.stepTimeoutMs;
+
+	const since = Math.max(lastEventAt, inFlight?.startedAt ?? 0);
+	// A silent model stream is a hang far sooner than a quiet tool is; never exceed the requested step timeout.
+	// Before any event since the request started it is waiting for its first token (slow on huge prompts); a step timeout
+	// shorter than the silence limit still wins.
+	const waitingForFirstEvent = inFlight?.kind === "model" && lastEventAt <= inFlight.startedAt;
+	const modelLimit = waitingForFirstEvent ? MODEL_FIRST_EVENT_MS : MODEL_SILENCE_MS;
+	const limit = inFlight?.kind === "model" ? (stepTimeoutMs < MODEL_SILENCE_MS ? stepTimeoutMs : modelLimit) : stepTimeoutMs;
+	if (now - since > limit) {
+		return {
+			kind: "stall",
+			overMs: now - since - limit,
+			detail: inFlight
+				? `${inFlight.kind} ${inFlight.name} in flight ${Math.round((now - inFlight.startedAt) / 1000)}s, no events for the last ${Math.round((now - since) / 1000)}s`
+				: `no events for ${Math.round((now - lastEventAt) / 1000)}s`,
+		};
 	}
 	return undefined;
 }

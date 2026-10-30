@@ -5,12 +5,7 @@
  */
 import type { AgentsHost } from "../host.ts";
 import { maxDepth, selfId } from "../host.ts";
-import {
-	type AgentInput,
-	DEFAULT_RUN_TIMEOUT_MS,
-	DEFAULT_STEP_TIMEOUT_MS,
-	newId,
-} from "../store/index.ts";
+import { type AgentInput, newId } from "../store/index.ts";
 import { describeProfiles, loadProfiles, resolveProfile } from "./profiles.ts";
 import { withReporting } from "./signaling.ts";
 
@@ -22,8 +17,9 @@ interface SpawnRequest {
 	objective: string;
 	/** Parent-requested triggers and final-handoff format; omitted means quiet. */
 	reporting?: string;
+	/** Explicit opt-in; omitted means no step timeout at all (a long step stays working). */
 	stepTimeoutMs?: number;
-	/** Only honoured for non-interactable profiles. */
+	/** Explicit opt-in whole-run limit. Only honoured for non-interactable profiles. */
 	runTimeoutMs?: number;
 }
 
@@ -62,7 +58,7 @@ export function createSupervisor(host: AgentsHost): Supervisor {
 			const parent = selfId(host);
 			const ctx = host.ctx;
 			if (!ctx) throw new Error("Cannot spawn before session_start.");
-			const { role, interactable, timeoutMs, ...snapshot } = resolveProfile(host.pi, ctx, request.profile);
+			const { role, interactable, ...snapshot } = resolveProfile(host.pi, ctx, request.profile);
 			const name = request.name ?? request.objective.slice(0, 24);
 			const id = newId(role, name);
 			const input: AgentInput = {
@@ -74,8 +70,9 @@ export function createSupervisor(host: AgentsHost): Supervisor {
 				profile: snapshot,
 				cwd: host.identity?.cwd ?? ctx.cwd,
 				interactable,
-				stepTimeoutMs: request.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
-				...(interactable ? {} : { runTimeoutMs: request.runTimeoutMs ?? timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS }),
+				// Timeouts are explicit opt-in: absent means the agent may take as long as it needs.
+				...(request.stepTimeoutMs !== undefined ? { stepTimeoutMs: request.stepTimeoutMs } : {}),
+				...(interactable || request.runTimeoutMs === undefined ? {} : { runTimeoutMs: request.runTimeoutMs }),
 				depth: (host.identity?.depth ?? 0) + 1,
 				spawnDepthLimit: host.identity?.spawnDepthLimit ?? maxDepth(host.pi),
 				createdAt: Date.now(),

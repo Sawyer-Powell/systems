@@ -15,20 +15,34 @@ interface NewStall {
 }
 
 /**
+ * Identity of one stall episode. Keys carry the episode start, so a notice left over from an
+ * earlier episode can never suppress a later one; staleness heals itself instead of depending on
+ * a scan happening to observe the recovery.
+ */
+function stallKey(record: AgentRecord, report: StallReport): string {
+	const { input, state } = record;
+	const activity = state?.activity;
+	const episode =
+		report.kind === "run-overrun" ? state?.runStartedAt ?? input.createdAt
+		: report.kind === "lost" ? state?.since ?? 0
+		: report.kind === "wedged" ? activity?.lastSeenAt ?? 0
+		: activity?.inFlight?.startedAt ?? activity?.lastEventAt ?? 0;
+	return `${input.id}:${report.kind satisfies StallKind}:${episode}`;
+}
+
+/**
  * The stalls among `records` that have not been reported yet, marking them reported. `reported`
- * dedupes `id:kind` until the agent recovers (no report any more), which resets its keys. Pure
- * apart from `reported`.
+ * dedupes `id:kind:episode`, and every key for this agent that is not the current episode is
+ * dropped at once, so a recovered agent can never keep a notice alive. Pure apart from `reported`.
  */
 export function newStalls(records: AgentRecord[], reported: Set<string>, now: number): NewStall[] {
 	const fresh: NewStall[] = [];
 	for (const record of records) {
 		const report = stallOf(record, now);
 		const prefix = `${record.input.id}:`;
-		if (!report) {
-			for (const key of [...reported]) if (key.startsWith(prefix)) reported.delete(key);
-			continue;
-		}
-		const key = `${prefix}${report.kind satisfies StallKind}`;
+		const key = report ? stallKey(record, report) : undefined;
+		for (const old of [...reported]) if (old.startsWith(prefix) && old !== key) reported.delete(old);
+		if (!report || !key) continue;
 		if (reported.has(key)) continue;
 		reported.add(key);
 		fresh.push({ record, report });

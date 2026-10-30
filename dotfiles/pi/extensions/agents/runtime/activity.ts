@@ -85,8 +85,9 @@ export class ActivityTracker {
 
 	/**
 	 * A model request began. Only the slowest thinking levels get a long first-token deadline
-	 * (silent thinking is legitimate there); otherwise the plain step timeout applies from the start.
-	 * The deadline is dropped on the first real output (`streamStart`).
+	 * (silent thinking is legitimate there). Nothing else has a deadline unless the caller requested
+	 * an explicit step timeout, so a slow first token is otherwise never treated as a hang. The
+	 * deadline is dropped on the first real output (`streamStart`).
 	 */
 	modelStart(thinking?: string): void {
 		const startedAt = this.now();
@@ -103,8 +104,8 @@ export class ActivityTracker {
 
 	/**
 	 * The first real output (text or a tool call; not thinking, and not the response headers that
-	 * open the stream): from here on silence longer than the step timeout is a hang. Clears the
-	 * first-token deadline and always flushes.
+	 * open the stream): from here on only an explicitly requested step timeout can call the silence
+	 * a hang. Clears the first-token deadline and always flushes.
 	 */
 	streamStart(): void {
 		if (this.streaming || !this.model) return;

@@ -146,10 +146,28 @@ describe("messaging", () => {
 describe("stallOf", () => {
 	const t0 = 1_000_000;
 	const stall = (id: string, now?: number): StallReport | undefined => stallOf(tmp.store.record(id)!, now);
+	// Step timeouts are explicit opt-in, so only the cases about them request one.
 	function start(id: string, extra: Partial<AgentInput> = {}) {
-		tmp.store.create(mkInput(id, null, { createdAt: t0, ...extra }));
+		tmp.store.create(mkInput(id, null, { createdAt: t0, stepTimeoutMs: 180_000, ...extra }));
 		tmp.store.acquireLock(id);
 	}
+	it("has no step or whole-run limit unless a caller asks for one", () => {
+		start("main.a.0001", { stepTimeoutMs: undefined });
+		tmp.store.writeState("main.a.0001", {
+			status: "working",
+			activity: { lastEventAt: t0, lastSeenAt: t0 + 3_600_000, inFlight: { kind: "tool", name: "bash", summary: "bash: curl", startedAt: t0 } },
+		});
+		// A ten-minute silent HTTP call stays working: nothing reports it as a stall or an overrun.
+		assert.equal(stall("main.a.0001", t0 + 600_000), undefined);
+		// Hours later it is still not a stall; only a stopped heartbeat (not silence) is a hang.
+		tmp.store.writeState("main.a.0001", { activity: { lastSeenAt: t0 + 86_400_000 } });
+		assert.equal(stall("main.a.0001", t0 + 86_400_000), undefined);
+	});
+	it("does not invent a whole-run limit", () => {
+		start("scout.a.0001", { interactable: false });
+		tmp.store.writeState("scout.a.0001", { status: "working", runStartedAt: t0, activity: { lastEventAt: t0 + 3_600_000, lastSeenAt: t0 + 3_600_000 } });
+		assert.equal(stall("scout.a.0001", t0 + 3_600_000), undefined);
+	});
 	it("is quiet when idle, waiting, or terminal", () => {
 		start("main.a.0001");
 		tmp.store.writeState("main.a.0001", { status: "idle", activity: { lastEventAt: t0, lastSeenAt: t0 + 3_600_000 - 1 } });

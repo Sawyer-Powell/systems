@@ -76,9 +76,12 @@ export async function startDaemon(home = runtimeHome()) {
 		if (l.settled || !state || state.status !== "working") return undefined;
 		const step = state.activity.inFlight;
 		if (step?.deadline !== undefined) return step.deadline + OVERRUN_GRACE_MS + 1;
+		// No step timeout was requested: an in-flight tool/model call cannot stall, so there is nothing to schedule.
+		const stepTimeoutMs = record!.input.stepTimeoutMs;
+		if (stepTimeoutMs === undefined) return undefined;
 		const since = Math.max(state.activity.lastEventAt, step?.startedAt ?? 0);
 		const modelLimit = state.activity.lastEventAt <= (step?.startedAt ?? 0) ? MODEL_FIRST_EVENT_MS : MODEL_SILENCE_MS;
-		const limit = step?.kind === "model" && record!.input.stepTimeoutMs >= MODEL_SILENCE_MS ? modelLimit : record!.input.stepTimeoutMs;
+		const limit = step?.kind === "model" && stepTimeoutMs >= MODEL_SILENCE_MS ? modelLimit : stepTimeoutMs;
 		return since + limit + 1;
 	}
 	function idle(l: Live) {

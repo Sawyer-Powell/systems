@@ -370,18 +370,15 @@ export function registerRuntime(host: AgentsHost): void {
 		safe((event: { toolCallId: string }) => tracker?.toolEnd(event.toolCallId)),
 	);
 
-	// Step-timeout guard: every bash call carries a deadline.
+	// There is no step timeout to serve, so nothing is injected into a bash call. A timeout the model declares
+	// itself is the only tool deadline recorded, so exceeding it surfaces as `overrun` rather than silence.
 	pi.on(
 		"tool_call",
 		safe((event: { toolName: string; toolCallId: string; input: Record<string, unknown> }) => {
-			if (event.toolName !== "bash" || !host.identity) return;
+			if (event.toolName !== "bash") return;
 			const declared = typeof event.input.timeout === "number" && event.input.timeout > 0 ? event.input.timeout : undefined;
-			// The user's own root session is never limited; only children get the default.
-			const limited = host.identity.parent !== null;
-			const seconds = declared ?? (limited ? Math.ceil(host.identity.stepTimeoutMs / 1000) : undefined);
-			if (seconds === undefined) return;
-			if (declared === undefined) event.input.timeout = seconds;
-			tracker?.declareDeadline(event.toolCallId, Date.now() + seconds * 1000);
+			if (declared === undefined) return;
+			tracker?.declareDeadline(event.toolCallId, Date.now() + declared * 1000);
 		}),
 	);
 

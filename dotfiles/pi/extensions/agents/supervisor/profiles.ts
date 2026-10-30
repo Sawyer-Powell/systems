@@ -1,7 +1,8 @@
 /**
  * Profiles: markdown files in `~/.pi/agent/agents/*.md` that describe a kind of
- * agent, with `interactable`, `timeout` (minutes, whole-run limit for non-interactable
- * agents) and `role`.
+ * agent, with `interactable` and `role`. Profiles declare no timeouts: a time limit is
+ * explicit opt-in per spawn (`spawn_agent` timeouts), so a profile never silently blocks
+ * an agent that is still working.
  *
  * Model tiers (`fast` / `deliberate`) resolve per machine to the first model with
  * configured auth among: `agents.models.<tier>`, each `agents.fallback` entry, then
@@ -36,15 +37,12 @@ interface ProfileInput {
 	prompt?: string;
 	extends?: string[];
 	interactable?: boolean;
-	/** Whole-run limit in minutes. */
-	timeoutMinutes?: number;
 	role?: string;
 }
 
 interface ResolvedProfile extends ProfileSnapshot {
 	role: string;
 	interactable: boolean;
-	timeoutMs?: number;
 }
 
 const DEFAULT_THINKING: Record<ModelAlias, ThinkingLevel> = { fast: "low", deliberate: "high" };
@@ -102,11 +100,6 @@ function asBool(value: unknown): boolean | undefined {
 	return undefined;
 }
 
-function asNumber(value: unknown): number | undefined {
-	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-	return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
 export function fromFrontmatter(frontmatter: Record<string, unknown>, body: string): ProfileInput {
 	const text = body.trim();
 	return {
@@ -118,7 +111,6 @@ export function fromFrontmatter(frontmatter: Record<string, unknown>, body: stri
 		prompt: text || undefined,
 		extends: asExtends(frontmatter.extends),
 		interactable: asBool(frontmatter.interactable),
-		timeoutMinutes: asNumber(frontmatter.timeout),
 		role: str(frontmatter.role),
 	};
 }
@@ -170,7 +162,6 @@ export function resolveProfile(
 		tools: merged.tools,
 		prompt: merged.prompt,
 		interactable: merged.interactable ?? false,
-		timeoutMs: merged.timeoutMinutes !== undefined ? merged.timeoutMinutes * 60_000 : undefined,
 	};
 }
 

@@ -158,15 +158,15 @@ function registerControl(pi: ExtensionAPI, host: AgentsHost, supervisor: Supervi
 		name: "spawn_agent",
 		label: "Spawn Agent",
 		description:
-			"Start a background agent from a profile. Returns immediately; do not wait. Interactable profiles (e.g. worker) can be attached to by the user; others run headless with a whole-run timeout. " +
+			"Start a background agent from a profile. Returns immediately; do not wait. Interactable profiles (e.g. worker) can be attached to by the user; others run headless and report back. No timeout applies unless you pass one, so a genuinely long run is never turned into a blocked agent. " +
 			"Results arrive as messages; status is shown in the user's widget. Specify reporting triggers and final-handoff format/length when needed; omitted means quiet (final + blocking questions, with material scope/safety exceptions). Do not request routine updates unless you need to act on them.",
 		parameters: Type.Object({
 			profile: Type.String({ description: "Profile name (see list_agents output or the profiles directory)." }),
 			objective: Type.String({ description: "A concrete objective, including acceptance criteria." }),
 			reporting: Type.Optional(Type.String({ description: "Parent signaling policy: when to notify (blocking only, named milestones, specific findings/conditions), and final-handoff sections/length cap. Default: quiet; final <=200 words with result, paths, verification, risks/questions. Overrides may also be written in the objective; keep them consistent." })),
 			name: Type.Optional(Type.String({ description: "Short slug for the agent id." })),
-			step_timeout_seconds: Type.Optional(Type.Number({ description: "Max time one step may take without activity. Default 180." })),
-			run_timeout_seconds: Type.Optional(Type.Number({ description: "Whole-run limit; non-interactable profiles only. Default 300." })),
+			step_timeout_seconds: Type.Optional(Type.Number({ description: "Explicit opt-in: max time one step may take without activity before it counts as a stall. Omitted means unlimited, so a silent tool or model call stays working. Pass it only when silence really should be treated as a hang." })),
+			run_timeout_seconds: Type.Optional(Type.Number({ description: "Explicit opt-in whole-run limit; non-interactable profiles only. Omitted means unlimited." })),
 		}),
 		async execute(_id, params) {
 			const input = await supervisor.spawn({

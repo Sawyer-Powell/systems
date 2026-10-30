@@ -16,7 +16,6 @@ export function mkInput(id: string, parent: string | null, extra: Partial<AgentI
 		profile: { name: "p", modelId: "m", thinking: "low" },
 		cwd: "/tmp",
 		interactable: true,
-		stepTimeoutMs: 180_000,
 		depth: parent ? 1 : 0,
 		createdAt: Date.now(),
 		...extra,
