@@ -17,7 +17,8 @@ describe("buildChildArgs", () => {
 			written[name] = text;
 			return `/tmp/${name}.md`;
 		});
-		assert.deepEqual(args.slice(0, 5), ["--no-extensions", "-e", "/ext", "--name", "parent::child"]);
+		// `--no-extensions` drops pi's built-in extensions, so the child names MCP and codemode itself.
+		assert.deepEqual(args.slice(0, 9), ["--no-extensions", "-e", "builtin:mcp", "-e", "builtin:codemode", "-e", "/ext", "--name", "parent::child"]);
 		assert.ok(args.includes("--session-id") && args.includes("worker.a.0001"));
 		assert.deepEqual(args.slice(args.indexOf("--session-dir"), args.indexOf("--session-dir") + 2), ["--session-dir", "/d/sessions"]);
 		assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2), ["--tools", "read,bash,ask_parent"]);
@@ -34,6 +35,16 @@ describe("buildChildArgs", () => {
 		assert.ok(!args.includes("--session-id"));
 		assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2), ["--tools", "+a,+b"]);
 		assert.ok(!args.includes("--append-system-prompt"));
+		assert.ok(args.includes("builtin:mcp"));
+	});
+	it("passes codemode and direct MCP patterns through the profile's allowlist", () => {
+		const tools = ["read", "codemode", "mcp__exa__*"];
+		const args = buildChildArgs({ id: "w.a.0001" }, { ...profile, tools }, { message: "m", dir: "/d", headless: false, extraTools: ["ask_parent"], extensionDir: "/ext" }, (n) => `/tmp/${n}.md`);
+		assert.deepEqual(args[args.indexOf("--tools") + 1].split(","), [...tools, "ask_parent"]);
+	});
+	it("never adds spawning tools on its own; they come from the caller's extraTools", () => {
+		const args = buildChildArgs({ id: "s.a.0001" }, { ...profile, tools: ["read"] }, { message: "m", dir: "/d", headless: true, extensionDir: "/ext" }, (n) => `/tmp/${n}.md`);
+		assert.equal(args[args.indexOf("--tools") + 1], "read");
 	});
 });
 

@@ -33,7 +33,7 @@
       },
       "exposure": "direct",
       "description": "Web and code search, company/people research, and crawling via Exa",
-      "enabled": false
+      "enabled": true
     }
   }
 }

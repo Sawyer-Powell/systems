@@ -17,6 +17,17 @@ const EXTENSION_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 /** unix socket paths are capped at ~104 bytes on macOS. */
 const MAX_SOCKET_PATH = 100;
 
+/**
+ * Pi built-in extensions the child must name explicitly, because `--no-extensions` drops the
+ * built-in set: `builtin:mcp` gives the child the MCP servers the parent has, and
+ * `builtin:codemode` is the sandbox that runs other tools (including MCP ones) from a script.
+ * Neither grants a tool by itself; the profile's `tools:` allowlist still decides which tools
+ * exist for the child, so a profile reaches an MCP server by naming `codemode` and/or an
+ * `mcp__<server>__*` pattern (Pi declares a `direct`-exposure MCP tool only when the allowlist
+ * names or matches it). Spawning tools are not added here: they come from `agentToolNames`.
+ */
+const CHILD_BUILTIN_EXTENSIONS = ["builtin:mcp", "builtin:codemode"];
+
 interface ChildArgsOptions {
 	/** First user message. Passed through a 0600 file, never argv (argv is visible to `ps`). */
 	message: string;
@@ -47,6 +58,7 @@ export function buildChildArgs(
 ): string[] {
 	const args = [
 		"--no-extensions",
+		...CHILD_BUILTIN_EXTENSIONS.flatMap((name) => ["-e", name]),
 		"-e",
 		options.extensionDir ?? EXTENSION_DIR,
 		"--name",

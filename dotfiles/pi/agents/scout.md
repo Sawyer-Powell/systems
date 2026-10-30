@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Fast read-only reconnaissance; returns compressed context. Non-interactable.
-tools: read, grep, find, ls
+tools: read, grep, find, ls, codemode, mcp__exa__*
 model: fast
 interactable: false
 timeout: 5

@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Implements a concrete objective in its own interactive session. Interactable.
-tools: read, grep, find, ls, edit, write, bash
+tools: read, grep, find, ls, edit, write, bash, codemode, mcp__exa__*
 model: deliberate
 interactable: true
 ---

@@ -150,6 +150,16 @@ Do not end()/shutdown() the inherited lease while its client lives.
   For isolated use set this override
   to this checkout's `dotfiles/pi/agents` and use a fresh `PI_CODING_AGENT_DIR`; do not reuse
   installed old report_done/ask_user prompts. Review custom prompts before later deployment.
+- Child tool surface: `--no-extensions` drops Pi's built-in extensions, so every child names
+  `-e builtin:mcp -e builtin:codemode` explicitly. Neither grants a tool by itself: a profile's
+  `tools:` is still the whole `--tools` allowlist (plus the extension's own names). Pi declares a
+  `direct`-exposure MCP tool only when the allowlist names or matches it, and naming any `mcp__`
+  entry makes Pi filter MCP tools to the matches, so a profile reaches an MCP server by listing
+  `codemode` and/or an `mcp__<server>__*` pattern, and `codemode`/`deferred`-exposure servers not
+  named that way stay parent-only. The source profiles grant `codemode` and `mcp__exa__*` (web
+  search/fetch, read-only). Spawning tools are never added implicitly; they come from
+  `agentToolNames`, so an interactable child only gets them while it is under `maxDepth` and a
+  non-interactable child gets none.
 - Model tiers/fallback/maxDepth, lineage authorization, claims and orientation remain.
 - Start explicitly with `PI_AGENTS_HOME=... node --experimental-strip-types central/daemon.ts`,
   or let the first session start it. Inspect daemon.log/per-agent log. No source deployment

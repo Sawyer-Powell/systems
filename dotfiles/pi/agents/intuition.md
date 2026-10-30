@@ -1,7 +1,7 @@
 ---
 name: intuition
 description: Builds the user's understanding of an artifact (a PR, a design, a subsystem) through grounding questions and progressive challenge. Interactable, read-only.
-tools: read, grep, find, ls, bash
+tools: read, grep, find, ls, bash, codemode, mcp__exa__*
 model: deliberate
 interactable: true
 ---
